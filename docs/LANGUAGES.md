@@ -8,7 +8,8 @@
 | --- | --- | --- | --- |
 | C / C++ | clangd，后台索引、clang-tidy | clang-format | include 路径、宏和标准依赖编译数据库 |
 | Python | basedpyright + Ruff | Ruff | 项目虚拟环境、依赖与检查规则 |
-| Verilog / SystemVerilog | Verible | verible-verilog-format | 源码清单、lint 规则；完整工程检查需仿真器或综合工具 |
+| Verilog `.v` / `.vh` | Verible，单独的 Verilog 规则与片段 | verible-verilog-format | 源码清单、lint 规则；完整工程检查需仿真器或综合工具 |
+| SystemVerilog `.sv` / `.svh` | Verible，保留 SV 风格规则与片段 | verible-verilog-format | 源码清单、lint 规则；完整工程检查需仿真器或综合工具 |
 | Perl | PerlNavigator，可配合 Perl::Critic | perltidy | Perl 模块搜索路径与项目检查策略 |
 | Tcl / SDC / XDC / UPF | tclsp（tclint） | tclfmt | EDA 命令需要对应工具规则或 tclint 插件 |
 | Makefile / `.mk` | Tree-sitter、内置文件类型规则 | 不配置 | recipe 保留真实 Tab |
@@ -114,16 +115,40 @@ rtl/counter_tb.sv
 
 语言服务使用 `--rules_config_search`，可以向上查找 `.rules.verible_lint`。Verible 格式化使用缓冲区有效缩进宽度，默认 4 空格。
 
+两种语言使用独立的客户端，即使文件处于同一工程，也不会共用检查规则：
+
+- `.v` / `.vh`：客户端名 `verible_verilog`。允许 `always @*`、`reg` / `wire`、普通 `parameter`、传统 function/task 声明、独立 `genvar` 和 `$random`；保留语法错误及其他 lint 检查。
+- `.sv` / `.svh`：客户端名 `verible`。保留 SV 的 `always_comb`、显式 lifetime 等默认建议及工程规则。
+
+Verilog 客户端在工程规则之后关闭以下规则，避免工程里为 SV 启用的约束再次影响 `.v`：
+
+| 关闭规则 | 原因 |
+| --- | --- |
+| `always-comb` | 会把合法的 `always @*` 建议改为 SV 的 `always_comb`。 |
+| `explicit-function-lifetime`、`explicit-task-lifetime` | 不要求传统 function/task 添加显式 `static` / `automatic` lifetime。 |
+| `explicit-function-task-parameter-type`、`explicit-parameter-storage-type` | 允许 Verilog 的隐式参数类型和传统函数/任务参数声明。 |
+| `unpacked-dimensions-range-ordering` | 不把 `[0:N-1]` 数组范围建议改成 SV 的 `[N]`。 |
+| `legacy-genvar-declaration`、`legacy-generate-region`、`v2001-generate-begin` | 保留 Verilog-2001 的独立 genvar 和 generate 结构。 |
+| `invalid-system-task-function` | 不将 Verilog 中合法的 `$random` / `$dist_*` 调用列为禁止项；该规则作为整体关闭。 |
+
+维护位置为 [hdl.lua](../lua/config/hdl.lua)。其他工程规则继续读取，例如行长、空白、赋值方式与位宽检查。不是通过隐藏所有警告来消除提示，相关 SV 迁移代码修复也不会在 Verilog 中出现。
+
+补全同样按语言分开：上游 friendly-snippets 的 Verilog 集合混有 `int`、`void`、`typedef` 等 SV 写法，因此只排除这一集合，由本仓库的 Verilog-2001 模板替代。SV 和其他语言继续使用各自的上游片段。HDL 单词补全只读取可见的同语言缓冲区；当前 `.v` 中用户自己写出的标识符仍可补全，不按关键词黑名单删除。
+
+两种语言仍共用 Tree-sitter 的 `systemverilog` 高亮/折叠解析器，它不产生 lint 或补全建议。Verible 自身也能解析 SV，以上隔离不等同于严格的 Verilog 标准检查；需要强制 Verilog-2001 时，在工程构建中使用如 `iverilog -g2001` 或对应仿真器的语言选项。
+
 工程的 include 路径、宏、库、top 与 UVM 环境需要实际仿真器配置。可以通过 `:Build` 输入 Verilator、Icarus 或厂商工具的工程命令；仓库不会替工程选择仿真器或自动运行仿真。
 
 自定义片段包括：
 
 | 文件类型 | 前缀 |
 | --- | --- |
-| Verilog | `rtlmod`、`seq` |
+| Verilog | `rtlmod` / `modu`、`seq`、`comb` / `al`、`for`、`fun` / `function`、`task`、`genfor`、`if`、`else`、`case`、`wh`、`initial` |
 | SystemVerilog | `rtlmod`、`ff`、`comb` |
 
 参考 [Verible 语言服务](https://github.com/chipsalliance/verible/blob/master/verible/verilog/tools/ls/README.md)。
+
+修改后重启 Neovim，用 `:checkhealth vim.lsp` 检查当前缓冲区所附加的客户端。仓库的 [HDL 回归检查](../tests/hdl.lua) 会验证上述语言隔离；安装了 Icarus 时，还会实际编译展开的 Verilog 模板。
 
 ## Tcl、Perl 与 Make
 

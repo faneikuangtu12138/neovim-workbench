@@ -83,7 +83,17 @@ vim.lsp.config("ruff", {
 })
 vim.lsp.config("verible", {
   cmd = { "verible-verilog-ls", "--rules_config_search" },
-  filetypes = { "verilog", "systemverilog" },
+  filetypes = { "systemverilog" },
+  root_markers = { "verible.filelist", ".git" },
+})
+-- Different clients are necessary when .v and .sv share the same project root.
+vim.lsp.config("verible_verilog", {
+  cmd = {
+    "verible-verilog-ls",
+    "--rules_config_search",
+    "--rules=" .. require("config.hdl").verilog_rules(),
+  },
+  filetypes = { "verilog" },
   root_markers = { "verible.filelist", ".git" },
 })
 vim.lsp.config("perlnavigator", {
@@ -122,7 +132,12 @@ local servers = {
   {
     name = "verible",
     executable = "verible-verilog-ls",
-    filetypes = { "verilog", "systemverilog" },
+    filetypes = { "systemverilog" },
+  },
+  {
+    name = "verible_verilog",
+    executable = "verible-verilog-ls",
+    filetypes = { "verilog" },
   },
   { name = "perlnavigator", executable = "perlnavigator", filetypes = { "perl" } },
   { name = "tclsp", executable = "tclsp", filetypes = { "tcl", "sdc", "xdc", "upf" } },
@@ -285,7 +300,8 @@ function M.show_tools()
   vim.list_extend(lines, {
     "",
     "C/C++: generate compile_commands.json with CMake or bear -- make.",
-    "SV: use verible.filelist; run full-project checks with your simulator.",
+    "HDL: .v/.vh use Verilog rules; .sv/.svh use SystemVerilog rules.",
+    "HDL: use verible.filelist; run full-project checks with your simulator.",
     "Tcl: install tclint (provides tclsp and tclfmt).",
     "",
     "Press q or Esc to close.",

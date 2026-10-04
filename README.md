@@ -97,11 +97,14 @@ return {
 | 配色、标签、文件树、欢迎页 | [colorscheme.lua](lua/config/colorscheme.lua)、[tabs.lua](lua/config/tabs.lua)、[neotree.lua](lua/config/neotree.lua)、[dashboard.lua](lua/config/dashboard.lua) |
 | 各语言缩进、格式化、保存时格式化 | [core/autocmds.lua](lua/core/autocmds.lua)、[formatting.lua](lua/config/formatting.lua) |
 | LSP、解析器、补全、模板 | [languages.lua](lua/config/languages.lua)、[treesitter.lua](lua/config/treesitter.lua)、[completion.lua](lua/config/completion.lua)、[snippets/](snippets/) |
+| Verilog/SV 检查与补全隔离 | [hdl.lua](lua/config/hdl.lua)、[语言说明](docs/LANGUAGES.md#verilog--systemverilog) |
 | 构建和终端 | [terminal.lua](lua/config/terminal.lua) |
 
 `local.lua` 只用于示例中列出的设置；一般选项、快捷键和插件仍在各自模块中修改。详细参数与依赖见 [逐文件配置说明](docs/CONFIGURATION.md)。项目格式规则优先放在项目自己的 `.clang-format`、`pyproject.toml`、`.perltidyrc`、`.stylua.toml` 等文件中。
 
 默认关闭保存时格式化，用快捷键手动格式化；C/C++、Python、Verilog/SystemVerilog、Perl 使用 4 空格，Lua/Tcl 使用 2 空格，Makefile 使用真正的 TAB、显示宽度 8。大于 1 MiB 或 20,000 行的文件会减少语言分析开销。
+
+`.v/.vh` 使用独立的 Verilog 检查规则和 Verilog-2001 片段，不要求将 `always @*` 等合法语法改为 SV；`.sv/.svh` 保留 SV 规则及模板。两种语言的单词补全也分开，详见 [语言说明](docs/LANGUAGES.md#verilog--systemverilog)。
 
 ## 更新与验证
 
@@ -119,6 +122,8 @@ NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/smoke.lua
 PowerShell 中设置应用名后，运行 `nvim --headless -i NONE -S tests/smoke.lua`。这个检查覆盖配置启动、语言识别、实际 TAB 插入及窗口导航；字体的像素外观仍需要在实际终端中检查。
 
 另有不加载用户配置的分支检查 `nvim --clean --headless -l tests/portability.lua`，以及隔离的 Python 后台测试 `python3 -m unittest discover -s tests -p test_terminal_ui.py`。详情见 [测试文件说明](docs/CONFIGURATION.md#testssmokelua)。
+
+安装 Verible 后，可运行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua` 验证 Verilog/SV 诊断、代码修复、头文件、混合工程客户端及真实补全来源。安装了 Icarus Verilog 时，还会用 Verilog-2001 模式编译展开的模板；在 Fedora WSL 中这 10 类检查全部通过。
 
 发布前已在 Fedora WSL 验证首次下载 20 个插件、15 类工作流检查、41 项平台分支检查和 4 项 Python 测试；实际 Neovim 网格也验证了兼容/Geometry 模式的文件树切换、多标签和极窄窗口恢复，含插入/可视模式。平台分支模拟不等于原生 Windows/macOS 的实机验证。
 

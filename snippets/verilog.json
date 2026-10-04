@@ -1,6 +1,6 @@
 {
   "Verilog module": {
-    "prefix": "rtlmod",
+    "prefix": ["rtlmod", "modu"],
     "body": [
       "module ${1:module_name} (",
       "    input wire clk,",
@@ -10,6 +10,11 @@
       "endmodule"
     ],
     "description": "Verilog module skeleton"
+  },
+  "Combinational block": {
+    "prefix": ["comb", "al"],
+    "body": ["always @* begin", "    $0", "end"],
+    "description": "Verilog-2001 combinational logic (always @*)"
   },
   "Clocked block": {
     "prefix": "seq",
@@ -24,5 +29,94 @@
       "$0"
     ],
     "description": "Verilog sequential logic"
+  },
+  "For loop": {
+    "prefix": "for",
+    "body": [
+      "begin : ${1:loop_block}",
+      "    integer ${2:i};",
+      "    for (${2:i} = 0; ${2:i} < ${3:count}; ${2:i} = ${2:i} + 1) begin",
+      "        $0",
+      "    end",
+      "end"
+    ],
+    "description": "Verilog loop with a named block for the local integer declaration"
+  },
+  "Function": {
+    "prefix": ["fun", "function"],
+    "body": [
+      "function [${1:WIDTH}-1:0] ${2:function_name};",
+      "    input [${1:WIDTH}-1:0] ${3:value};",
+      "    begin",
+      "        ${2:function_name} = ${3:value};",
+      "        $0",
+      "    end",
+      "endfunction"
+    ],
+    "description": "Verilog function with a return range and separate input declaration"
+  },
+  "Task": {
+    "prefix": "task",
+    "body": [
+      "task ${1:task_name};",
+      "    input [${2:WIDTH}-1:0] ${3:value};",
+      "    begin",
+      "        $0",
+      "    end",
+      "endtask"
+    ],
+    "description": "Verilog task with separate input declarations"
+  },
+  "Generate loop": {
+    "prefix": "genfor",
+    "body": [
+      "genvar ${1:g};",
+      "generate",
+      "    for (${1:g} = 0; ${1:g} < ${2:WIDTH}; ${1:g} = ${1:g} + 1) begin : ${3:gen_bits}",
+      "        $0",
+      "    end",
+      "endgenerate"
+    ],
+    "description": "Verilog-2001 generate loop with a separate genvar declaration"
+  },
+  "If block": {
+    "prefix": "if",
+    "body": ["if (${1:condition}) begin", "    $0", "end"],
+    "description": "Verilog if block"
+  },
+  "If else block": {
+    "prefix": "else",
+    "body": [
+      "if (${1:condition}) begin",
+      "    ${2}",
+      "end else begin",
+      "    $0",
+      "end"
+    ],
+    "description": "Verilog if/else blocks"
+  },
+  "Case statement": {
+    "prefix": "case",
+    "body": [
+      "case (${1:selector})",
+      "    ${2:value}: begin",
+      "        ${3}",
+      "    end",
+      "    default: begin",
+      "        $0",
+      "    end",
+      "endcase"
+    ],
+    "description": "Verilog case statement with a default branch"
+  },
+  "While loop": {
+    "prefix": "wh",
+    "body": ["while (${1:condition}) begin", "    $0", "end"],
+    "description": "Verilog while loop"
+  },
+  "Initial block": {
+    "prefix": "initial",
+    "body": ["initial begin", "    $0", "end"],
+    "description": "Verilog initial block"
   }
 }

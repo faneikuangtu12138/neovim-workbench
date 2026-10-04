@@ -123,7 +123,8 @@ flowchart TD
 | `clangd` | C/C++ 等：后台索引、clang-tidy、补全；`cmd` 中可调整 flags。工程头文件、宏和编译选项应由 `compile_commands.json` / clangd 工程配置提供。 |
 | `basedpyright` | Python 类型、导航、补全；默认 `typeCheckingMode = "standard"`、`diagnosticMode = "openFilesOnly"`。优先在项目 Pyright 配置中制定规则。 |
 | `ruff` | Python 检查与修复；关闭其 hover，避免与 basedpyright 重复。 |
-| `verible` | Verilog/SV 语法与风格服务；启用规则搜索，根标记包含 `verible.filelist`。功能以服务器能力为准，不能代替仿真器和完整工程语义检查。 |
+| `verible_verilog` | `.v` / `.vh` 语法与风格服务；关闭会要求将合法 Verilog 改成 SV 的规则。具体列表在 `config.hdl`；仍读取工程规则。 |
+| `verible` | `.sv` / `.svh` 语法与风格服务；保留 SV 默认规则。两个 HDL 服务共用 Verible 程序，但客户端独立，根标记包含 `verible.filelist`。功能以服务器能力为准，不能代替仿真器和完整工程语义检查。 |
 | `perlnavigator` | Perl 导航与诊断；可改 `perlPath`、warnings 等设置，依赖工程的 Perl 环境。 |
 | `tclsp` | Tcl 检查服务，根标记包含 Tcl 配置；不承诺完整定义跳转、重命名或语义补全。 |
 | `lua_ls` | Lua；Neovim 配置识别 `vim` 和运行时库，普通项目的 `.luarc.json` / `.luarc.jsonc` 保留优先。 |
@@ -136,7 +137,15 @@ flowchart TD
 
 配置 Blink 的 `lsp`、`path`、`snippets`、`buffer` 四类补全来源，使用 Lua fuzzy 实现和 Neovim 默认 snippet 引擎。自定义 JSON 片段位于 `snippets/`，另加载 friendly-snippets。
 
+通过 `sources.providers.snippets.opts.filter_snippets` 排除上游混有 SV 语法的 Verilog 片段，改用本仓库的 Verilog 模板；SV 和其他语言继续加载上游片段。`buffer.opts.get_bufnrs` 限制 HDL 单词补全只读取可见的同语言缓冲区，避免旁边的 `.sv` 将 `logic`、`always_comb` 等带入 `.v`。这两个回调在 `config.hdl` 中。
+
 `preselect = false`、`auto_insert = false` 避免未选择就插入候选；回车接受已选项，TAB / Shift-TAB 跳转片段占位符，否则保留正常按键行为。可在 `keymap` / `sources.default` 修改按键和来源，在 `completion.documentation` 调整 250 ms 文档延迟。命令行补全关闭，由 Noice 自己的界面处理；大文件和特殊缓冲区禁用常规补全。
+
+### [lua/config/hdl.lua](../lua/config/hdl.lua)
+
+集中维护 Verilog 与 SystemVerilog 的编辑边界。`verilog_disabled_rules` 列出仅在 Verilog 客户端禁用的迁移或不兼容风格规则；`verilog_rules()` 转为 Verible 的 `--rules` 参数，并在工程 `.rules.verible_lint` 之后生效。语法解析与其他 lint 规则保留。具体关闭项及原因见 [语言说明](LANGUAGES.md#verilog--systemverilog)。
+
+`filter_snippets(filetype, path)` 只排除 friendly-snippets 的 `snippets/verilog.json`，个人 Verilog 片段仍可加载。`completion_buffers()` 将 `.v/.vh` 和 `.sv/.svh` 的可见缓冲区单词隔开，其他语言保留原有可见缓冲区补全范围。不要用关键词黑名单过滤所有候选，否则可能误删用户定义的标识符。
 
 ### [lua/config/treesitter.lua](../lua/config/treesitter.lua)
 
@@ -293,7 +302,7 @@ Windows Terminal 行高后台，使用 Python 标准库和 POSIX 文件锁。默
 
 | 文件 | 已有前缀与职责 | 如何修改 |
 | --- | --- | --- |
-| [snippets/verilog.json](../snippets/verilog.json) | `rtlmod` 模块骨架、`seq` 时序块 | 默认 4 空格，嵌套 8；可改端口、复位方式和占位符。 |
+| [snippets/verilog.json](../snippets/verilog.json) | `rtlmod` / `modu`、`seq`、`comb` / `al`、`for`、`fun` / `function`、`task`、`genfor`、`if`、`else`、`case`、`wh`、`initial` | Verilog-2001 写法，默认 4 空格、嵌套 8；`for` 使用命名块声明局部 `integer`，函数/任务采用分开的参数声明。 |
 | [snippets/systemverilog.json](../snippets/systemverilog.json) | `rtlmod` 参数化模块、`ff` / `comb` | 默认 4 空格，嵌套 8；保留 `always_ff` / `always_comb` 对应的工程编码规则。 |
 | [snippets/perl.json](../snippets/perl.json) | `plmain` 严格脚本、`sub` 子程序 | 可改函数参数模板，默认子程序正文 4 空格。 |
 | [snippets/tcl.json](../snippets/tcl.json) | `proc` 过程、`clock` SDC 时钟 | 默认过程正文 2 空格；时序约束模板仍需按工程对象和单位调整。 |
@@ -314,6 +323,12 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 基础工作流验证入口，共 15 类检查：配置与命令、实际插件 revision 与 lock 一致、本地几何缓存同步、10 类文件的识别与真实 TAB 输入、RTL 片段的 4 / 8 空格，以及新文件编辑保存后重复进入树和返回编辑区。使用临时文件，不修改终端设置。
 
 它不参与 `init.lua` 启动，也不代表已覆盖所有终端、字体、语言服务或 UI 像素行为。执行方法和所需环境见仓库 README；新增回归用例应围绕可观察的用户行为。
+
+### [tests/hdl.lua](../tests/hdl.lua)
+
+加载完整配置及实际 Blink 片段、单词补全来源，使用真实 Verible LSP 验证同工程 `.v` / `.sv` 客户端隔离、`.vh` / `.svh` 识别、两种打开顺序、Verilog 不收到 SV 迁移诊断或代码修复、SV 规则仍生效、语法错误仍可见，以及工程其他规则继续生效。检查补全没有跨语言污染，SV 和 Python 的上游片段仍可用。
+
+安装 Verible 后执行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua`（Fish 前加 `env`；PowerShell 先设置应用名）。如果 PATH 中有 Icarus Verilog，还会展开本仓库模板并用 `iverilog -g2001 -tnull` 编译，共 10 类检查；缺少 Icarus 时明确跳过编译检查。它只使用临时工程，不修改用户文件。
 
 ### [tests/portability.lua](../tests/portability.lua)
 
@@ -351,6 +366,7 @@ Python 后台的隔离测试：行高范围、JSONC、重复 profile 要求明�
 | 改默认缩进 / Make TAB | `core.autocmds`；项目 `.editorconfig` 与格式化规则 |
 | 改按键 | `core.keymaps`；补全 / LSP / Git 专属按键分别在相应模块 |
 | 增加语言服务 / 调整诊断 | `config.languages` |
+| 调整 Verilog/SV 区分、迁移建议、补全隔离 | `config.hdl`；模板在 `snippets/verilog.json` / `snippets/systemverilog.json` |
 | 增加格式化器 / 保存格式化范围 | `config.formatting` |
 | 添加或改片段 | 对应 `snippets/*.json` |
 | 改树过滤、初始宽度和节点显示 | `config.neotree`；拖动逻辑在 `config.resize` |

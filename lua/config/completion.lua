@@ -1,3 +1,5 @@
+local hdl = require("config.hdl")
+
 require("blink.cmp").setup({
   enabled = function()
     if vim.bo.buftype ~= "" or vim.b.large_file then
@@ -25,7 +27,13 @@ require("blink.cmp").setup({
     },
     documentation = { auto_show = true, auto_show_delay_ms = 250, window = { border = "rounded" } },
   },
-  sources = { default = { "lsp", "path", "snippets", "buffer" } },
+  sources = {
+    default = { "lsp", "path", "snippets", "buffer" },
+    providers = {
+      snippets = { opts = { filter_snippets = hdl.filter_snippets } },
+      buffer = { opts = { get_bufnrs = hdl.completion_buffers } },
+    },
+  },
   snippets = { preset = "default" },
   signature = { enabled = true, window = { border = "rounded" } },
   cmdline = { enabled = false },
