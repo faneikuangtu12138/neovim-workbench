@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.ttf -text
+*.png -text
+# Preserve upstream license bytes so SOURCES.json hashes stay reproducible.
+fonts/licenses/* -text
+fonts/licenses/SOURCES.json text eol=lf
+fonts/OFL.txt -text

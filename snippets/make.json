@@ -1,0 +1,4 @@
+{
+  "Make rule": { "prefix": "rule", "body": ["${1:target}: ${2:dependencies}", "\t${3:command}", "$0"], "description": "Make rule with a real tab" },
+  "Phony rule": { "prefix": "phony", "body": [".PHONY: ${1:target}", "${1:target}:", "\t${2:command}", "$0"], "description": "Phony target with a real tab" }
+}

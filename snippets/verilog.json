@@ -1,0 +1,28 @@
+{
+  "Verilog module": {
+    "prefix": "rtlmod",
+    "body": [
+      "module ${1:module_name} (",
+      "    input wire clk,",
+      "    input wire rst_n",
+      ");",
+      "    $0",
+      "endmodule"
+    ],
+    "description": "Verilog module skeleton"
+  },
+  "Clocked block": {
+    "prefix": "seq",
+    "body": [
+      "always @(posedge ${1:clk} or negedge ${2:rst_n}) begin",
+      "    if (!${2:rst_n}) begin",
+      "        ${3:q} <= ${4:0};",
+      "    end else begin",
+      "        ${3:q} <= ${5:d};",
+      "    end",
+      "end",
+      "$0"
+    ],
+    "description": "Verilog sequential logic"
+  }
+}

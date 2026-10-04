@@ -1,0 +1,12 @@
+# Personal settings and generated editor state must stay on each machine.
+/local.lua
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+.venv/
+/test-results/
+/node_modules/

@@ -1,0 +1,49 @@
+local opt = vim.opt
+opt.number = true
+opt.relativenumber = true
+opt.termguicolors = true
+opt.background = "dark"
+opt.cursorline = true
+opt.signcolumn = "yes"
+opt.cmdheight = 0
+opt.laststatus = 3
+opt.showmode = false
+opt.showtabline = 2
+opt.winborder = "rounded"
+opt.fillchars =
+  { vert = " ", eob = " ", fold = " ", foldopen = "", foldclose = "", foldsep = " " }
+opt.tabstop = 4
+opt.shiftwidth = 4
+opt.softtabstop = 4
+opt.expandtab = true
+opt.smartindent = true
+opt.ignorecase = true
+opt.smartcase = true
+opt.incsearch = true
+opt.hlsearch = true
+opt.inccommand = "split"
+opt.splitright = true
+opt.splitbelow = true
+opt.splitkeep = "screen"
+opt.scrolloff = 6
+opt.sidescrolloff = 8
+opt.undofile = true
+local undo_dir = vim.fn.stdpath("state") .. "/undo"
+vim.fn.mkdir(undo_dir, "p")
+opt.undodir = undo_dir
+opt.mouse = "a"
+opt.wrap = false
+opt.updatetime = 250
+opt.timeoutlen = 450
+opt.completeopt = { "menu", "menuone", "noselect" }
+opt.pumheight = 10
+opt.list = true
+opt.listchars = { tab = "» ", trail = "·", nbsp = "␣" }
+opt.virtualedit = "block"
+opt.foldlevel = 99
+opt.foldlevelstart = 99
+opt.shortmess:append({ I = true, c = true, C = true })
+opt.encoding = "utf-8"
+opt.fileencoding = "utf-8"
+opt.grepprg = "rg --vimgrep --smart-case"
+opt.grepformat = "%f:%l:%c:%m"

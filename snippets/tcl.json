@@ -1,0 +1,4 @@
+{
+  "Tcl procedure": { "prefix": "proc", "body": ["proc ${1:name} {${2:args}} {", "  $0", "}"], "description": "Tcl procedure" },
+  "Timing clock": { "prefix": "clock", "body": ["create_clock -name ${1:clk} -period ${2:10.0} [get_ports ${3:clk}]", "$0"], "description": "SDC clock constraint" }
+}

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Apache-2.0.txt",
+    "source": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "name": "nerd-fonts-LICENSE",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/LICENSE",
+    "sha256": "1f6ad4edae6479aaace3112ede5279a23284ae54b2a34db66357aef5f64df160"
+  },
+  {
+    "name": "codicons-LICENSE.txt",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/codicons/LICENSE.txt",
+    "sha256": "d6239afa918961b465b07bf7411cbe34ff6685854f58553db7966f4881a0211f"
+  },
+  {
+    "name": "font-awesome-LICENSE.txt",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/font-awesome/LICENSE.txt",
+    "sha256": "de784a808496d49f5f80dd9d1d6e9a51cff712cfbc339e7c25155631ae3cdb5d"
+  },
+  {
+    "name": "materialdesign-LICENSE",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/materialdesign/LICENSE",
+    "sha256": "3bae6305bcaa6d10219b999f65c342034c2d40b1c0e8567fa08605e73ccba829"
+  },
+  {
+    "name": "octicons-LICENSE",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/octicons/LICENSE",
+    "sha256": "4f886642f9e8d99eeadd484acdac011c3fde8a338faf52f5ca1408c13b9a9b63"
+  },
+  {
+    "name": "pomicons-LICENSE",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/pomicons/LICENSE",
+    "sha256": "cb4797a9745683f287c28833db596e9d68ec43082d59359b3a49c504f0f610ce"
+  },
+  {
+    "name": "powerline-extra-LICENSE",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/powerline-extra/LICENSE",
+    "sha256": "544307a58e6826c24145b2af1c3578b53e2e21ae0e6c67ab4c6abd544304d26a"
+  },
+  {
+    "name": "powerline-symbols-LICENSE.txt",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/powerline-symbols/LICENSE.txt",
+    "sha256": "46d5355e4734468135d8e4a30d0916292cc4df2b3ec30aa68c866f82497933be"
+  },
+  {
+    "name": "weather-icons-OFL.txt",
+    "source": "https://raw.githubusercontent.com/ryanoasis/nerd-fonts/1002d659b5247d0dc0e5a635e89ab2735ecc2e5b/src/glyphs/weather-icons/OFL.txt",
+    "sha256": "69cdedc8a4f57a30d68e4f045af8b9cce0ec3b1a6e7eec1ad41737c894f26790"
+  },
+  {
+    "name": "devicons-LICENSE",
+    "source": "https://raw.githubusercontent.com/devicons/devicon/master/LICENSE",
+    "sha256": "121194741d4a915b9f5890fdd6dd95121f9b1f816517c792358d72d7c838d664"
+  },
+  {
+    "name": "hack-LICENSE.md",
+    "source": "https://raw.githubusercontent.com/source-foundry/Hack/master/LICENSE.md",
+    "sha256": "1f61bb7c790c59b4b0ecdf304628b94e42ae4c8020094a8c3da73381ab212623"
+  },
+  {
+    "name": "font-awesome-extension-LICENSE",
+    "source": "https://raw.githubusercontent.com/AndreLZGava/font-awesome-extension/master/LICENCE",
+    "sha256": "b47b15d771c4507a75ff65beca3a78168d6af4cca9b45177a1aa817139c64ba5"
+  },
+  {
+    "name": "font-logos-LICENSE",
+    "source": "https://raw.githubusercontent.com/lukas-w/font-logos/master/LICENSE",
+    "sha256": "88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd"
+  },
+  {
+    "name": "seti-ui-LICENSE",
+    "source": "https://raw.githubusercontent.com/jesseweed/seti-ui/master/LICENSE.md",
+    "sha256": "d4d2d888c6a0a220a7b0e2d6013cf37539b0e05ef937002b3b33bdb364575b88"
+  },
+  {
+    "name": "power-symbols-IEC-LICENSE",
+    "source": "https://raw.githubusercontent.com/jloughry/Unicode/master/LICENSE.txt",
+    "sha256": "11aef1cdf2d58d822e6857e2574870ccc59d4900052bf5c098e319d750e7ac3d"
+  }
+]
