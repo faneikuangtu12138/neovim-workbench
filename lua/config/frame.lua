@@ -133,10 +133,11 @@ local function configure(railwin, win, side)
   end
   local rows = {}
   for index = 1, math.max(1, api.nvim_win_get_height(win) - (compact and 0 or 1)) do
-    -- The first visible tab already supplies the outer top-left corner.
-    -- Its floor meets a straight left rail, including when it is inactive.
-    -- A second convex corner here would leave the two outlines disconnected.
-    rows[index] = special and index == 1 and side == "right" and edge(win, "body_top_right")
+    -- An inactive first tab is inset one header cell, so its left side meets
+    -- the editor's rounded roof. A selected first tab owns the outer corner
+    -- itself and continues into a straight body rail without a second bend.
+    local rounded = side == "right" or not require("config.tabs").first_selected(win)
+    rows[index] = special and index == 1 and rounded and edge(win, "body_top_" .. side)
       or edge(win, side)
   end
   lines(railwin, rows)

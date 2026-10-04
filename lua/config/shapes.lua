@@ -13,6 +13,8 @@ function M.set_height(value)
     M["edge_" .. name] = enabled and vim.fn.nr2char(cp)
       or (
         name:find("mark") and ""
+        or name:find("body_top_left") and "╭"
+        or name:find("body_top_right") and "╮"
         or name:find("left") and "│"
         or name:find("right") and "│"
         or "─"

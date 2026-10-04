@@ -1,8 +1,8 @@
 -- Keep Verilog-2001 editing independent from SystemVerilog conventions.
 local M = {}
 
--- Verible parses both languages, but these rules prescribe SV replacements
--- for legal Verilog declarations, arrays, generate regions and system calls.
+-- Verible parses both languages. The first group prescribes SV replacements;
+-- the second imposes naming preferences on otherwise legal Verilog.
 -- Command-line overrides are applied after the project's .rules.verible_lint.
 M.verilog_disabled_rules = {
   "always-comb",
@@ -15,6 +15,13 @@ M.verilog_disabled_rules = {
   "legacy-generate-region",
   "v2001-generate-begin",
   "invalid-system-task-function",
+  -- Naming is a project convention, not a language error. Permit uppercase
+  -- localparams, legacy macros, arbitrary module filenames and block labels.
+  "parameter-name-style",
+  "macro-name-style",
+  "generate-label-prefix",
+  "module-filename",
+  "positive-meaning-parameter-name",
 }
 
 function M.verilog_rules()

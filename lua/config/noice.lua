@@ -79,7 +79,12 @@ require("noice").setup({
 vim.api.nvim_create_autocmd({ "UIEnter", "VimResized", "CmdlineEnter" }, {
   group = vim.api.nvim_create_augroup("WorkbenchCommandGeometry", { clear = true }),
   callback = function(event)
-    local menu = require("noice.config").options.views.cmdline_popupmenu
+    -- Noice defers setup until a UI attaches; headless resize has no views.
+    local views = require("noice.config").options.views
+    local menu = views and views.cmdline_popupmenu
+    if not menu then
+      return
+    end
     menu.position.row = completion_row()
     menu.size.max_height = completion_height()
     if event.event == "VimResized" then

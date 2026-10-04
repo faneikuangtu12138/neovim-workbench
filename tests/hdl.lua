@@ -98,8 +98,12 @@ local ok, failure = xpcall(function()
   vim.fn.writefile(rules, temporary .. "/.rules.verible_lint")
   vim.fn.writefile({ "legacy.v", "legacy.sv" }, temporary .. "/verible.filelist")
   local legacy = {
-    "module legacy(input wire a, output reg q);",
+    "module legacy #(parameter integer DisableCapture = 0)(input wire a, output reg q);",
     "    parameter WIDTH = 8;",
+    "    localparam integer COUNT_WIDTH = 8;",
+    "    localparam [2:0] C_IDLE = 3'd0;",
+    "    parameter disable_capture = 0;",
+    "    `define legacy_value 1",
     "    reg [7:0] memory [0:3];",
     "    function [7:0] increment;",
     "        input [7:0] value;",
@@ -119,7 +123,7 @@ local ok, failure = xpcall(function()
     "    end",
     "    genvar g;",
     "    generate",
-    "        for (g = 0; g < WIDTH; g = g + 1) begin : gen_bits",
+    "        for (g = 0; g < WIDTH; g = g + 1) begin : bits",
     "            wire unused;",
     "        end",
     "    endgenerate",
@@ -149,7 +153,7 @@ local ok, failure = xpcall(function()
     end
   end)
 
-  check("legal Verilog has no SV migration diagnostics", function()
+  check("legal Verilog has no SV migration or naming diagnostics", function()
     for _, rule in ipairs(hdl.verilog_disabled_rules) do
       assert(not has_rule(v_diags, rule), "Verilog still reports " .. rule)
     end
@@ -171,13 +175,32 @@ local ok, failure = xpcall(function()
     }) do
       assert(has_rule(sv_diags, rule), "SystemVerilog lost " .. rule)
     end
+    for _, rule in ipairs({
+      "parameter-name-style",
+      "macro-name-style",
+      "generate-label-prefix",
+      "positive-meaning-parameter-name",
+    }) do
+      assert(
+        has_rule(sv_diags, rule),
+        "SV fixture did not exercise naming rule: " .. rule .. " / " .. vim.inspect(sv_diags)
+      )
+    end
+  end)
+
+  check("module naming does not constrain Verilog source filenames", function()
+    local body = { "module actual_module;", "endmodule" }
+    local vb = open(temporary .. "/different_name.v", body)
+    assert(not has_rule(diagnostics(vb, client_for(vb, "verible_verilog")), "module-filename"))
+    local svb = open(temporary .. "/different_name.sv", body)
+    assert(has_rule(diagnostics(svb, client_for(svb, "verible")), "module-filename"))
   end)
 
   check("Verilog code actions do not replace always with always_comb", function()
     local function actions(buf, client, diags)
       local result, err = client:request_sync("textDocument/codeAction", {
         textDocument = { uri = vim.uri_from_bufnr(buf) },
-        range = { start = { line = 25, character = 0 }, ["end"] = { line = 27, character = 7 } },
+        range = { start = { line = 29, character = 0 }, ["end"] = { line = 31, character = 7 } },
         context = { diagnostics = diags },
       }, 5000, buf)
       assert(result and not result.err, vim.inspect(err or result))

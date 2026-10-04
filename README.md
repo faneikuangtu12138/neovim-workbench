@@ -123,7 +123,9 @@ PowerShell 中设置应用名后，运行 `nvim --headless -i NONE -S tests/smok
 
 另有不加载用户配置的分支检查 `nvim --clean --headless -l tests/portability.lua`，以及隔离的 Python 后台测试 `python3 -m unittest discover -s tests -p test_terminal_ui.py`。详情见 [测试文件说明](docs/CONFIGURATION.md#testssmokelua)。
 
-安装 Verible 后，可运行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua` 验证 Verilog/SV 诊断、代码修复、头文件、混合工程客户端及真实补全来源。安装了 Icarus Verilog 时，还会用 Verilog-2001 模式编译展开的模板；在 Fedora WSL 中这 10 类检查全部通过。
+安装 Verible 后，可运行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua` 验证 Verilog/SV 诊断、命名约束、代码修复、头文件、混合工程客户端及真实补全来源。安装了 Icarus Verilog 时，还会用 Verilog-2001 模式编译展开的模板；在 Fedora WSL 中这 11 类检查全部通过。
+
+`NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/tab_corner.lua` 检查标签与正文的左上连接、两种焦点和窗口裁剪/恢复，共 7 类检查。实际像素外观仍需结合终端字体验证。
 
 发布前已在 Fedora WSL 验证首次下载 20 个插件、15 类工作流检查、41 项平台分支检查和 4 项 Python 测试；实际 Neovim 网格也验证了兼容/Geometry 模式的文件树切换、多标签和极窄窗口恢复，含插入/可视模式。平台分支模拟不等于原生 Windows/macOS 的实机验证。
 

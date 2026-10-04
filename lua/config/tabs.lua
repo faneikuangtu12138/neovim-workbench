@@ -170,12 +170,12 @@ local function label_row(win, data)
   local first, last = data.tabs[1], data.tabs[#data.tabs]
   local parts = {
     face(
-      first.active and "WorkbenchEditorFill" or "WorkbenchTabInactive",
-      first.active and edge(body, "top_left") or marked(edge("normal", "top_left"), nil, body)
+      first.active and "WorkbenchEditorFill" or "WorkbenchChrome",
+      first.active and edge(body, "top_left") or " "
     ),
     face(
       first.active and "WorkbenchEditorFill" or "WorkbenchTabInactive",
-      first.active and edge(body, "top") or marked(edge("normal", "top"), nil, body)
+      first.active and edge(body, "top") or marked(edge("normal", "top_left"), nil, body)
     ),
   }
   for index, tab in ipairs(data.tabs) do

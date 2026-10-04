@@ -143,7 +143,7 @@ flowchart TD
 
 ### [lua/config/hdl.lua](../lua/config/hdl.lua)
 
-集中维护 Verilog 与 SystemVerilog 的编辑边界。`verilog_disabled_rules` 列出仅在 Verilog 客户端禁用的迁移或不兼容风格规则；`verilog_rules()` 转为 Verible 的 `--rules` 参数，并在工程 `.rules.verible_lint` 之后生效。语法解析与其他 lint 规则保留。具体关闭项及原因见 [语言说明](LANGUAGES.md#verilog--systemverilog)。
+集中维护 Verilog 与 SystemVerilog 的编辑边界。`verilog_disabled_rules` 列出仅在 Verilog 客户端禁用的 SV 迁移及默认命名约束；`verilog_rules()` 转为 Verible 的 `--rules` 参数，并在工程 `.rules.verible_lint` 之后生效。`parameter-name-style` 不再要求局部参数用 CamelCase，同时放宽宏、生成块前缀、模块与文件名对应、Enable/Disable 参数名称约束。语法解析与其他 lint 规则保留。具体关闭项及原因见 [语言说明](LANGUAGES.md#verilog--systemverilog)。
 
 `filter_snippets(filetype, path)` 只排除 friendly-snippets 的 `snippets/verilog.json`，个人 Verilog 片段仍可加载。`completion_buffers()` 将 `.v/.vh` 和 `.sv/.svh` 的可见缓冲区单词隔开，其他语言保留原有可见缓冲区补全范围。不要用关键词黑名单过滤所有候选，否则可能误删用户定义的标识符。
 
@@ -197,6 +197,8 @@ Conform 是唯一统一格式化入口：C/C++ → clang-format，Python → Ruf
 
 `notify.setup()` 控制通知 2.5 秒超时、宽高和渲染方式。`routes` 过滤部分保存和搜索边界消息；新增过滤条件应只针对明确不需要显示的消息。LSP signature 由 Blink 处理，Noice signature 和 progress 已关闭，避免重复提示。
 
+几何回调会等待 Noice 的视图配置可用；无界面模式的窗口缩放不会访问尚未初始化的 `views`。正常界面中的命令框与补全仍一起重排。
+
 ## 主题、标签、轮廓与底栏
 
 ### [lua/config/colorscheme.lua](../lua/config/colorscheme.lua)
@@ -219,11 +221,15 @@ Screenkey 的 `clear_after = 2`、`compress_after = 3` 和 `disable` 表控制�
 
 当前标签与正文轮廓相接；相邻标签共用连接列，最左侧当前标签与窗格左沿接合。焦点描边粗细从 `frame.focused_window()` 获取，缓冲区是否选中与窗格是否有焦点分别处理。可改标题截断上限、标签文字和工具条显示阈值，但几何预算、鼠标目标和连接字形必须一起更新。
 
+当第一个可见标签未选中时，其左侧角占用第二个保留单元，侧边下接正文圆角的顶部端点；最外侧单元留给正文的圆弧。第一个可见标签选中时，恢复由标签承担外围圆角、正文直线延续的结构。两种情况使用相同预算，标签文字位置和正文起始行不变；窄窗口裁剪后根据“第一个可见标签”判断，而不是固定缓冲区编号。
+
 `setup()` 注册 `WorkbenchTabs` 等渲染 / 点击函数，接管 `vim.o.tabline`。左键选中指定窗格中的缓冲区；中键、右键和关闭按钮用 mini.bufremove 关闭缓冲区，保留窗口。`prepare()` / `model()` / `first_selected()` 为 frame 提供位置与连接信息。
 
 ### [lua/config/frame.lua](../lua/config/frame.lua)
 
 为每个原生内容窗口建立左右各 1 列装饰 rail，利用窗口状态栏绘制底边，用保留区域内的少量不接收焦点的浮窗补齐连接处和 `⋮`。`panes()` 返回真实内容窗格的角色与坐标，供 tabs 和 resize 使用。
+
+正文左上边框与 `tabs.first_selected()` 同步：首个可见标签未选中时使用 `body_top_left` 圆角，选中时向下连续；右上角继续使用正文圆角。Geometry 模式使用既有字形，普通字体模式的正文角回退为 `╭` / `╮`。
 
 `focused_window()` 记住真实焦点：插件浮窗或 `nvim_win_call()` 临时上下文不应把明亮轮廓切到其他窗格。`move()` / `cycle()` 排除装饰窗口；通用 `Ctrl+h/j/k/l` 和部分 `Ctrl+w` 操作经由它们。`refresh()` 在重绘、分屏、缩放和配色变化时统一更新轮廓；小于 24 列或 8 行时降级。极窄布局会在重绘前移除装饰并临时解除固定宽度、均分内容窗格，避免侧栏挤压编辑区；随后恢复固定宽度属性，窗口放大后重新建立装饰。
 
@@ -328,7 +334,13 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 加载完整配置及实际 Blink 片段、单词补全来源，使用真实 Verible LSP 验证同工程 `.v` / `.sv` 客户端隔离、`.vh` / `.svh` 识别、两种打开顺序、Verilog 不收到 SV 迁移诊断或代码修复、SV 规则仍生效、语法错误仍可见，以及工程其他规则继续生效。检查补全没有跨语言污染，SV 和 Python 的上游片段仍可用。
 
-安装 Verible 后执行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua`（Fish 前加 `env`；PowerShell 先设置应用名）。如果 PATH 中有 Icarus Verilog，还会展开本仓库模板并用 `iverilog -g2001 -tnull` 编译，共 10 类检查；缺少 Icarus 时明确跳过编译检查。它只使用临时工程，不修改用户文件。
+安装 Verible 后执行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua`（Fish 前加 `env`；PowerShell 先设置应用名）。检查包含大写 localparam、传统宏/生成块名称、不同模块与文件名。若 PATH 中有 Icarus Verilog，还会展开本仓库模板并用 `iverilog -g2001 -tnull` 编译，共 11 类检查；缺少 Icarus 时明确跳过编译检查。它只使用临时工程，不修改用户文件。
+
+### [tests/tab_corner.lua](../tests/tab_corner.lua)
+
+加载完整配置，检查实际标签行文本、原生边框缓冲区和正文起始行。覆盖第一个/第二个标签选中、编辑区/文件树焦点、窄窗口裁剪、恢复窗口和切回首标签，共 7 类检查。第二个标签选中时，第一个标签左边界内缩一列，与正文圆角的顶部端点连接；文字起始位置和正文高度不变。第一个可见标签选中时，标签承担外围圆角，正文侧边连续向下。
+
+使用当前配置执行 `nvim --headless -i NONE -S tests/tab_corner.lua`；独立应用名安装需先按 README 设置应用名。这个测试验证结构和状态切换，像素连接还需用实际终端或原生字形栅格检查；本次另外检查了 Geometry 模式 96/192 DPI 下的粗/细边框连接。
 
 ### [tests/portability.lua](../tests/portability.lua)
 

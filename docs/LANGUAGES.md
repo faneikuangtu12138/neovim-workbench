@@ -130,8 +130,13 @@ Verilog 客户端在工程规则之后关闭以下规则，避免工程里为 SV
 | `unpacked-dimensions-range-ordering` | 不把 `[0:N-1]` 数组范围建议改成 SV 的 `[N]`。 |
 | `legacy-genvar-declaration`、`legacy-generate-region`、`v2001-generate-begin` | 保留 Verilog-2001 的独立 genvar 和 generate 结构。 |
 | `invalid-system-task-function` | 不将 Verilog 中合法的 `$random` / `$dist_*` 调用列为禁止项；该规则作为整体关闭。 |
+| `parameter-name-style` | 不强制局部参数使用 CamelCase；`COUNT_WIDTH`、`C_IDLE` 等大写名称可以正常使用。 |
+| `macro-name-style`、`generate-label-prefix` | 不强制宏全大写，也不要求生成块名称带 `g_` / `gen_` 前缀。 |
+| `module-filename`、`positive-meaning-parameter-name` | 模块名不必等于文件名；参数不必为满足风格检查而从 `Disable...` 改成 `Enable...`。 |
 
 维护位置为 [hdl.lua](../lua/config/hdl.lua)。其他工程规则继续读取，例如行长、空白、赋值方式与位宽检查。不是通过隐藏所有警告来消除提示，相关 SV 迁移代码修复也不会在 Verilog 中出现。
+
+`localparam` 本身是 Verilog-2001 的语法；“Localparam name does not match the naming convention” 是 Verible 的命名风格约束，不是 SV 语法要求。Verilog 编辑配置同时关闭上述迁移建议和几项默认命名约束；这些明确关闭的规则不会被工程文件重新启用。如果确实需要某项风格检查，从 `hdl.lua` 的关闭列表移除该项后，在工程 `.rules.verible_lint` 中配置它。SystemVerilog 的检查策略保持原样。
 
 补全同样按语言分开：上游 friendly-snippets 的 Verilog 集合混有 `int`、`void`、`typedef` 等 SV 写法，因此只排除这一集合，由本仓库的 Verilog-2001 模板替代。SV 和其他语言继续使用各自的上游片段。HDL 单词补全只读取可见的同语言缓冲区；当前 `.v` 中用户自己写出的标识符仍可补全，不按关键词黑名单删除。
 
