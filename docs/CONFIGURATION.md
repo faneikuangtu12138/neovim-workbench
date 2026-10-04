@@ -329,7 +329,7 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 ### [lua/config/minimap.lua](../lua/config/minimap.lua)
 
-右侧代码缩略图的开关、原生辅助 split、编码、视野/光标/诊断标记和生命周期管理。复用已安装 `mini.nvim` 中 `mini.map.encode_strings()` 的公开接口；自行管理窗口几何，不使用 mini.map 默认的全屏浮窗。辅助窗口使用 `workbench-frame` 文件类型和 `minimap` 角色，窗口导航、文件标签和底栏跳过它；`span()` 向 `config.frame` 提供合并宽度，使标签和外边框覆盖正文与缩略图。
+右侧代码缩略图的开关、原生辅助 split、编码、视野/光标/诊断标记和生命周期管理。复用已安装 `mini.nvim` 中 `mini.map.encode_strings()` 的公开接口；自行管理窗口几何，不使用 mini.map 默认的全屏浮窗。辅助窗口使用 `workbench-frame` 文件类型和 `minimap` 角色，窗口导航、文件标签和底栏跳过它；`span()` 向 `config.frame` 提供合并宽度，使标签和外边框覆盖正文与缩略图。诊断点遵守缓冲区及各个诊断 namespace 的启用状态；`<leader>ud` 主动刷新缩略图，命令行结束也会重新检查，避免开关没有派发 `DiagnosticChanged` 时留下旧标记。
 
 默认不开启。`core.keymaps` 的 `<leader>uv` 调用 `:MinimapToggle`；另有 `:MinimapOpen` 和 `:MinimapClose`。开关按 Tab page 独立保存，切换文件与真实编辑分屏时跟随正文来源。欢迎页不编码；文件树聚焦时保留最近编辑文件。宽度不足时暂停显示，重新放大后恢复，开关不会被自动清除。大文件只显示比例滚动条，不生成代码轮廓。
 
@@ -366,7 +366,7 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 ### [tests/minimap.lua](../tests/minimap.lua)
 
-加载完整配置，验证默认关闭和欢迎页等待、独立宽度与连续编辑器轮廓、代码/诊断/编辑刷新、保存后文件树与窗口导航、快捷键/命令及空间回收、窄窗隐藏与恢复、多标签和分屏跟随、关闭来源窗口、大文件比例指示及 Tab page 开关隔离，共 9 类检查。操作临时文件，不修改终端设置。
+加载完整配置，验证默认关闭和欢迎页等待、独立宽度与连续编辑器轮廓、代码/诊断/编辑刷新（含实际诊断开关快捷键及禁用单个 namespace）、保存后文件树与窗口导航、快捷键/命令及空间回收、窄窗隐藏与恢复、多标签和分屏跟随、关闭来源窗口、大文件比例指示及 Tab page 开关隔离，共 9 类检查。操作临时文件，不修改终端设置。
 
 使用当前配置执行 `nvim --headless -i NONE -S tests/minimap.lua`；独立应用名安装先按 README 设置应用名。窗口像素外观仍需结合实际终端验证。
 

@@ -110,6 +110,8 @@ map("n", "<leader>uw", function()
 end, "Toggle Line Wrap")
 map("n", "<leader>ud", function()
   vim.diagnostic.enable(not vim.diagnostic.is_enabled({ bufnr = 0 }), { bufnr = 0 })
+  -- enable() changes visibility without emitting DiagnosticChanged.
+  require("config.minimap").refresh()
 end, "Toggle Buffer Diagnostics")
 map("n", "<leader>ui", "<cmd>DevTools<CR>", "Inspect Development Tools")
 map("n", "<leader>um", "<cmd>Mason<CR>", "Manage Language Tools")

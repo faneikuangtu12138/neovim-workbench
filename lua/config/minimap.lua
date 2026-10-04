@@ -228,11 +228,18 @@ function M.paint()
     state.resolution = large and 1 or 2
   end
   api.nvim_buf_clear_namespace(target, content_ns, 0, -1)
-  local diagnostics = {}
+  local diagnostics, visible_namespaces = {}, {}
   if vim.diagnostic.is_enabled({ bufnr = buf }) then
     for _, item in ipairs(vim.diagnostic.get(buf)) do
-      local row = row_for(state, item.lnum + 1)
-      diagnostics[row] = math.min(diagnostics[row] or 4, item.severity)
+      local namespace = item.namespace
+      if namespace and visible_namespaces[namespace] == nil then
+        visible_namespaces[namespace] =
+          vim.diagnostic.is_enabled({ bufnr = buf, ns_id = namespace })
+      end
+      if not namespace or visible_namespaces[namespace] then
+        local row = row_for(state, item.lnum + 1)
+        diagnostics[row] = math.min(diagnostics[row] or 4, item.severity)
+      end
     end
   end
   for row, severity in pairs(diagnostics) do
@@ -334,6 +341,7 @@ function M.setup(opts)
     "CursorMovedI",
     "WinScrolled",
     "DiagnosticChanged",
+    "CmdlineLeave",
   }, {
     group = group,
     callback = function()

@@ -131,7 +131,7 @@ Git hunk 操作只在 GitSigns 已附加的缓冲区生效：
 | `<leader>uv` / `:MinimapToggle` | 显示 / 隐藏右侧代码缩略图 |
 | `:MinimapOpen` / `:MinimapClose` | 明确打开 / 关闭缩略图，重复执行不会创建多个窗格 |
 | `<leader>uw` | 切换当前窗口的自动折行 |
-| `<leader>ud` | 切换当前缓冲区诊断 |
+| `<leader>ud` | 切换当前缓冲区诊断，同时更新缩略图的诊断点 |
 | `<leader>uh` | 切换内联提示，实际显示取决于服务能力 |
 | `<leader>ui` / `:DevTools` | 查看语言与工程工具状态 |
 | `<leader>um` / `:Mason` | 管理语言工具 |
