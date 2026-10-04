@@ -362,6 +362,10 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 后台只有一个 Python 进程和一个在途请求，后续请求合并为最新状态；响应必须仍匹配当前来源和有效窗口才显示。关闭窗格时清理记录，全部关闭时停止后台；切换 Tab 时不向隐藏窗口输出。浮窗与缩略图相交时暂停图像显示，浮窗关闭后重新绘制，防止遮住弹窗。
 
+重绘监听只记录缩略图正文行是否重绘，并检查浮窗遮挡状态；单独刷新状态栏不会重复发送图像，空闲时不产生图像传输。
+
+关闭时显式擦除当前缩略图矩形，即使新帧仍在后台渲染也保留旧图像的清理状态。`TabLeave` 擦除离开的图像，返回时重绘；窗口已失效时重新绘制原生布局，避免按过期坐标擦掉别的编辑区。
+
 Windows Terminal 的 [SixelParser](https://github.com/microsoft/terminal/blob/main/src/terminal/adapter/SixelParser.cpp) 默认使用 **10×20 虚拟像素格**，随真实终端字号、行高及 DPI 缩放，无需读取物理像素或修改终端字体。`setup(opts)` 中 `cell_width` / `cell_height` 可按其他 Sixel 终端的映射设置；不要把 Windows Terminal 的物理 DPI 尺寸填入这里。其他终端尚未做实机验证。
 
 可选参数 `python` 为单个解释器路径，`font` 为可访问的 TrueType/OpenType 字体路径；默认读取仓库的 `fonts/ForgeMonoGeometry6NF-Regular.ttf`。默认优先使用 `stdpath('data')/workbench-minimap-env` 虚拟环境，缺少时尝试 `python3`。`:MinimapSetup` 主动创建虚拟环境并安装 `Pillow>=12,<13`，不修改系统 Python，也不在启动时下载。`status()` 返回终端能力、后台、错误、在途请求和已输出帧数，供排查使用。

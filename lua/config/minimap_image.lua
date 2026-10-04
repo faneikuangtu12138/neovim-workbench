@@ -87,11 +87,56 @@ local function obscured(rect)
   return false
 end
 
+local function draw(rect, color, sixel)
+  -- Save/restore cursor, attributes and DECSDM. Position is body-only; rounded
+  -- tabs, rails and footer remain outside the image rectangle.
+  local erase = {
+    "\27[?2026s\27[?2026h\27[?80s\27[?80l\27" .. "7",
+    string.format(
+      "\27[48;2;%d;%d;%dm",
+      math.floor(color / 65536),
+      math.floor(color / 256) % 256,
+      color % 256
+    ),
+  }
+  -- Only this blank native rectangle is erased, keeping the exact theme base
+  -- colour behind transparent Sixel pixels and removing old selection shadows.
+  for row = rect.y, rect.y + rect.height - 1 do
+    erase[#erase + 1] = string.format("\27[%d;%dH\27[%dX", row + 1, rect.x + 1, rect.width)
+  end
+  erase[#erase + 1] = string.format("\27[%d;%dH", rect.y + 1, rect.x + 1)
+    .. (sixel or "")
+    .. "\27"
+    .. "8\27[?80r\27[?2026r"
+  api.nvim_ui_send(table.concat(erase))
+end
+
+local function erase(record)
+  if not record or not record.painted then
+    return
+  end
+  record.painted = false
+  if capable ~= true or not tty() then
+    return
+  end
+  if not api.nvim_win_is_valid(record.win) then
+    -- The native window has already closed: redraw the new layout instead of
+    -- erasing stale coordinates that could now contain another editor.
+    vim.cmd("redraw!")
+    return
+  end
+  if api.nvim_win_get_tabpage(record.win) == api.nvim_get_current_tabpage() then
+    local rect = geometry(record.win)
+    if rect then
+      draw(rect, record.model.background)
+    end
+  end
+end
+
 local function send(record)
   local win = record.win
   if
-    not record.sixel
-    or not api.nvim_win_is_valid(win)
+    not api.nvim_win_is_valid(win)
     or api.nvim_win_get_tabpage(win) ~= api.nvim_get_current_tabpage()
     or records[win] ~= record
     or capable ~= true
@@ -111,28 +156,10 @@ local function send(record)
     end
     return
   end
-  -- Save/restore cursor, attributes and DECSDM. Position is body-only; rounded
-  -- tabs, rails and footer remain outside the image rectangle.
-  local color = record.model.background
-  local erase = {
-    "\27[?2026s\27[?2026h\27[?80s\27[?80l\27" .. "7",
-    string.format(
-      "\27[48;2;%d;%d;%dm",
-      math.floor(color / 65536),
-      math.floor(color / 256) % 256,
-      color % 256
-    ),
-  }
-  -- Only this blank native rectangle is erased, keeping the exact theme base
-  -- colour behind transparent Sixel pixels and removing old selection shadows.
-  for row = rect.y, rect.y + rect.height - 1 do
-    erase[#erase + 1] = string.format("\27[%d;%dH\27[%dX", row + 1, rect.x + 1, rect.width)
+  if not record.sixel then
+    return
   end
-  erase[#erase + 1] = string.format("\27[%d;%dH", rect.y + 1, rect.x + 1)
-    .. record.sixel
-    .. "\27"
-    .. "8\27[?80r\27[?2026r"
-  api.nvim_ui_send(table.concat(erase))
+  draw(rect, record.model.background, record.sixel)
   frames_sent = frames_sent + 1
   record.painted = true
 end
@@ -229,7 +256,8 @@ function M.update(win, model)
     return
   end
   serial = serial + 1
-  local record = { id = serial, win = win, rect = rect, model = model }
+  local record =
+    { id = serial, win = win, rect = rect, model = model, painted = previous and previous.painted }
   records[win] = record
   if capable ~= true or not tty() or not start() then
     return
@@ -246,6 +274,7 @@ function M.snapshot(win)
 end
 
 function M.clear(win)
+  erase(records[win])
   records[win] = nil
   if next(records) == nil and worker then
     local job = worker
@@ -258,6 +287,14 @@ function M.setup(opts)
   options = opts or {}
   attributes(vim.v.termresponse)
   local group = api.nvim_create_augroup("WorkbenchMinimapImage", { clear = true })
+  api.nvim_create_autocmd("TabLeave", {
+    group = group,
+    callback = function()
+      for _, record in pairs(records) do
+        erase(record)
+      end
+    end,
+  })
   api.nvim_create_autocmd("TermResponse", {
     group = group,
     callback = function(event)
@@ -286,14 +323,33 @@ function M.setup(opts)
     end,
   })
   local ns = api.nvim_create_namespace("WorkbenchMinimapImage")
+  local dirty = {}
   api.nvim_set_decoration_provider(ns, {
+    on_win = function(_, win)
+      return records[win] ~= nil
+    end,
+    on_line = function(_, win)
+      dirty[win] = true
+    end,
     on_end = function()
       if not repaint_pending and next(records) ~= nil and capable and tty() then
         repaint_pending = true
         vim.schedule(function()
           repaint_pending = false
-          for _, record in pairs(records) do
-            send(record)
+          local changed = dirty
+          dirty = {}
+          for win, record in pairs(records) do
+            local rect = api.nvim_win_is_valid(win) and geometry(win) or nil
+            if rect then
+              local hidden = obscured(rect)
+              if
+                changed[win]
+                or (hidden and record.painted)
+                or (not hidden and not record.painted)
+              then
+                send(record)
+              end
+            end
           end
         end)
       end
