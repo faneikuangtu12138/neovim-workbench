@@ -69,43 +69,36 @@ local ok, failure = xpcall(function()
   end)
   check("scroll position, diagnostics and edits refresh the map", function()
     local target = api.nvim_win_get_buf(minimap.window())
-    local lines = api.nvim_buf_get_lines(target, 0, -1, false)
-    assert(table.concat(lines):find("[^ ]"), "Only blank map content")
+    local model = minimap.snapshot()
+    assert(#model.characters > 0, "No code glyphs in map model")
     local diag_ns = api.nvim_create_namespace("WorkbenchMinimapRegressionDiagnostics")
     vim.diagnostic.set(diag_ns, buf, {
       { lnum = 120, col = 0, severity = vim.diagnostic.severity.WARN, message = "test warning" },
       { lnum = 0, col = 0, severity = vim.diagnostic.severity.ERROR, message = "outside slice" },
     })
     minimap.refresh()
-    local namespaces = api.nvim_get_namespaces()
-    local marks = api.nvim_buf_get_extmarks(
-      target,
-      namespaces.WorkbenchMinimapContent,
-      0,
-      -1,
-      { details = true }
-    )
+    local marks = minimap.snapshot().diagnostics
     assert(
-      #marks == 1 and marks[1][4].virt_text[1][2] == "DiagnosticWarn",
+      #marks == 1 and marks[1].severity == vim.diagnostic.severity.WARN,
       "A diagnostic outside the code slice was clamped onto its edge"
     )
     api.nvim_feedkeys(api.nvim_replace_termcodes("<Space>ud", true, false, true), "xt", false)
     assert(not vim.diagnostic.is_enabled({ bufnr = buf }))
-    marks = api.nvim_buf_get_extmarks(target, namespaces.WorkbenchMinimapContent, 0, -1, {})
+    marks = minimap.snapshot().diagnostics
     assert(#marks == 0, "Disabling diagnostics left a stale minimap warning")
     api.nvim_feedkeys(api.nvim_replace_termcodes("<Space>ud", true, false, true), "xt", false)
     assert(vim.diagnostic.is_enabled({ bufnr = buf }))
-    marks = api.nvim_buf_get_extmarks(target, namespaces.WorkbenchMinimapContent, 0, -1, {})
+    marks = minimap.snapshot().diagnostics
     assert(#marks == 1, "Re-enabling diagnostics did not restore the minimap marker")
     vim.diagnostic.enable(false, { bufnr = buf, ns_id = diag_ns })
     minimap.refresh()
-    marks = api.nvim_buf_get_extmarks(target, namespaces.WorkbenchMinimapContent, 0, -1, {})
+    marks = minimap.snapshot().diagnostics
     assert(#marks == 0, "Minimap includes diagnostics from a disabled namespace")
     vim.diagnostic.enable(true, { bufnr = buf, ns_id = diag_ns })
-    local before = api.nvim_buf_get_lines(target, 0, -1, false)
+    local before = minimap.snapshot().characters
     api.nvim_buf_set_lines(buf, 0, -1, false, { "module short;", "endmodule" })
     settle()
-    assert(not vim.deep_equal(before, api.nvim_buf_get_lines(target, 0, -1, false)))
+    assert(not vim.deep_equal(before, minimap.snapshot().characters))
     assert(api.nvim_get_current_buf() == buf and vim.bo[buf].modified, "Map swallowed an edit")
     vim.cmd.write()
     vim.diagnostic.reset(diag_ns, buf)
@@ -122,30 +115,22 @@ local ok, failure = xpcall(function()
       vim.cmd("normal! zz")
       settle()
       local target = api.nvim_win_get_buf(minimap.window())
-      local top = api.nvim_buf_get_lines(target, 0, -1, false)
+      local top = minimap.snapshot().characters
       api.nvim_win_set_cursor(editor, { 400, 0 })
       vim.cmd("normal! zz")
       settle()
-      local bottom = api.nvim_buf_get_lines(target, 0, -1, false)
+      local bottom = minimap.snapshot().characters
       assert(
-        #top == #bottom and not vim.deep_equal(top, bottom),
+        #top <= minimap.config.lines_per_row * api.nvim_win_get_height(minimap.window())
+          and not vim.deep_equal(top, bottom),
         "Long preview was squeezed to fit"
       )
       vim.cmd.colorscheme("catppuccin")
       settle()
-      local marks = api.nvim_buf_get_extmarks(
-        target,
-        api.nvim_get_namespaces().WorkbenchMinimapSyntax,
-        0,
-        -1,
-        { details = true }
-      )
       local colors = {}
-      for _, mark in ipairs(marks) do
-        local name = mark[4].hl_group
-        local hl = api.nvim_get_hl(0, { name = name, link = false })
-        if hl.fg then
-          colors[hl.fg] = true
+      for _, row in ipairs(minimap.snapshot().characters) do
+        for _, glyph in ipairs(row) do
+          colors[glyph.color] = true
         end
       end
       assert(vim.tbl_count(colors) >= 2, "Theme reload erased minimap syntax colours")
@@ -205,7 +190,7 @@ local ok, failure = xpcall(function()
     vim.cmd.write()
     settle()
     local target = api.nvim_win_get_buf(minimap.window())
-    assert(#api.nvim_buf_get_lines(target, 0, -1, false) <= 2)
+    assert(#minimap.snapshot().characters == 3)
     navigation.toggle_tree_visibility()
     vim.cmd.vsplit()
     local other = api.nvim_get_current_win()
@@ -217,7 +202,7 @@ local ok, failure = xpcall(function()
     settle()
     assert(minimap.span(editor) == minimap.window(), "Closing source left orphaned map")
   end)
-  check("large buffers retain a proportional scrollbar without encoding", function()
+  check("large buffers retain position shadows without encoding", function()
     local limit = minimap.config.max_lines
     minimap.config.max_lines = 2
     api.nvim_buf_set_lines(0, 0, -1, false, source)
@@ -226,21 +211,12 @@ local ok, failure = xpcall(function()
     assert(not table.concat(api.nvim_buf_get_lines(target, 0, -1, false)):find("[^ ]"))
     api.nvim_win_set_cursor(0, { 150, 0 })
     minimap.refresh()
-    local marks = api.nvim_buf_get_extmarks(
-      target,
-      api.nvim_get_namespaces().WorkbenchMinimapView,
-      0,
-      -1,
-      { details = true }
-    )
-    local found
-    for _, mark in ipairs(marks) do
-      if mark[4].priority == 20 then
-        assert(mark[2] > 0 and mark[2] < api.nvim_win_get_height(minimap.window()) - 1)
-        found = true
-      end
-    end
-    assert(found, "No middle-of-file cursor marker")
+    vim.cmd("normal! zz")
+    minimap.refresh()
+    local model = minimap.snapshot()
+    assert(model.large and #model.characters == 0)
+    assert(model.cursor == 150 and model.count == 300)
+    assert(model.viewport[1] <= 150 and model.viewport[2] >= 150)
     minimap.config.max_lines = limit
     vim.bo.modified = false
   end)

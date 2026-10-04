@@ -20,6 +20,24 @@
 
 Windows Terminal 会缓存字体集合。安装或更新字体后，保存文件，退出全部 Windows Terminal 窗口，再重新打开。其他终端请在各自设置中调整字体、行距或字符格高度；同一终端网格中的文件树、正文、标签和状态栏共享行高，不能分别设置像素高度。
 
+## 缩略图空白或提示渲染器不可用
+
+小字体图像需要 Sixel 终端及 Neovim 0.12，当前已验证 Windows Terminal 1.24。不支持图像的终端无法显示本实现的小字体；它没有自动退回方块轮廓。默认关闭，使用 `空格 u v` 开启。窗口过窄、欢迎页或工具缓冲区时会等待合适的正文窗格。
+
+首次执行 `:MinimapSetup`，需要 Python 3.10+、venv 模块、pip 和网络；它把 Pillow 装入 `stdpath('data')/workbench-minimap-env`，不改系统环境。WSL 安装发生在 Linux 内，Windows 的 Python 包不能替代 Linux 包。命令只在主动执行时下载；已有自己的 Pillow 环境可在 `config.minimap.setup(opts)` 中指定 `python`。终端明确报告不支持 Sixel 时只提示一次，不创建空白窗格。
+
+排查命令：
+
+```vim
+:lua print(vim.inspect(require('config.minimap_image').status()))
+:lua print(vim.fn.stdpath('data') .. '/workbench-minimap-env')
+:lua print(vim.inspect(vim.v.termresponse))
+```
+
+`supported=true` 表示当前 TTY 宣告支持 Sixel；`worker` 表示后台在运行，`pending` 表示仍在处理图像，`error` 给出渲染错误。Linux/macOS/WSL 的独立解释器位于上述目录的 `bin/python`，原生 Windows 位于 `Scripts/python.exe`。终端重绘、关闭浮窗后会恢复图像。正文和缩略图字号独立：修改 `lines_per_row` 为 `2` 可放大缩略字形，不需要调整正文终端字体。
+
+其他 Sixel 终端可按其虚拟像素格调整 `cell_width` / `cell_height`，默认 10×20 是 Windows Terminal 的协议映射，不是物理 DPI 尺寸。纯 GUI Neovim 或终端复用器对图像转发的支持未验证。
+
 ## `:UiLineHeight` 提示手动设置或找不到 profile
 
 自动调整终端设置只在 **WSL + Windows Terminal** 中启用。它不在 Neovim 启动时调用 Windows interop，也不会在其他系统尝试修改终端设置。其他系统、非 Windows Terminal 或关闭集成时，无参数报告当前几何行高；带有效参数会立即同步几何字形并保存缓存，提示你手动设置终端行高。

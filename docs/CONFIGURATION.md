@@ -39,7 +39,9 @@ flowchart TD
   Frame --> Resize[config.resize]
   Frame --> Footer[config.footer]
   Frame --> Minimap[config.minimap]
-  Minimap --> Encoder[config.minimap_render / syntax-coloured Braille]
+  Minimap --> Glyphs[config.minimap_render / source glyphs and colours]
+  Minimap --> Image[config.minimap_image / asynchronous Sixel]
+  Image --> Pixels[scripts/minimap-render.py / real small fonts]
   Footer --> Capsules[config.footer_capsules]
   Capsules --> Shapes
   Init --> Appearance[config.appearance]
@@ -329,33 +331,48 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 ### [lua/config/minimap.lua](../lua/config/minimap.lua)
 
-右侧代码缩略图的开关、原生辅助 split、视野/光标/诊断标记和生命周期管理。由 `config.minimap_render` 生成细密点阵及语法颜色；自行管理窗口几何，原生分屏给缩略图保留空间。辅助窗口使用 `workbench-frame` 文件类型和 `minimap` 角色，窗口导航、文件标签和底栏跳过它；`span()` 向 `config.frame` 提供合并宽度，使标签和外边框覆盖正文与缩略图。诊断点遵守缓冲区及各个诊断 namespace 的启用状态；`<leader>ud` 主动刷新缩略图，命令行结束也会重新检查，避免开关没有派发 `DiagnosticChanged` 时留下旧标记。长文件只给当前缩略图片段内的诊断加点，不将片段之外的诊断错误地挤到边沿。
+管理右侧缩略图开关、原生辅助 split、正文视野/光标/选区/诊断模型及生命周期。辅助窗口使用 `workbench-frame` 文件类型和 `minimap` 角色，导航、文件标签与底栏跳过它；原生分屏预留空间，`span()` 向 `config.frame` 提供合并宽度，标签与外框覆盖正文和缩略图。默认关闭，`<leader>uv` / `:MinimapToggle` 切换，另有 `:MinimapOpen`、`:MinimapClose`。开关按 Tab page 保存，跟随当前正文分屏；文件树聚焦时保留最近编辑文件，欢迎页不绘制。宽度不足时暂停，重新放大后恢复。
 
-默认不开启。`core.keymaps` 的 `<leader>uv` 调用 `:MinimapToggle`；另有 `:MinimapOpen` 和 `:MinimapClose`。开关按 Tab page 独立保存，切换文件与真实编辑分屏时跟随正文来源。欢迎页不编码；文件树聚焦时保留最近编辑文件。宽度不足时暂停显示，重新放大后恢复，开关不会被自动清除。长文件的点阵密度固定，预览随正文视野滚动，右侧细条另行指示全文件位置；超过安全阈值的大文件只显示比例滚动条。
+视野以浅色阴影标示；普通/插入模式的光标行使用深色阴影，可视模式则按字符、整行或矩形选区加深相应区域。字符选区处理正反方向及 `selection=exclusive`。诊断点遵守缓冲区与 namespace 的启用状态，片段之外的诊断不挤到边沿；`<leader>ud` 主动刷新。没有左侧竖线、光标箭头或位置细条。
 
-在本模块的 `M.config` 修改默认值，也可在 `init.lua` 的 `setup({ ... })` 中传入覆盖值，修改后重启：
+主要参数在模块顶部 `M.config`，也可以通过 `setup(opts)` 传入：
 
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
-| `width` | `24` | 缩略图列宽，支持 6–40 列；左侧 3 列用于位置/诊断与间隔，右侧 1 列用于全文件位置。 |
-| `column_scale` | `2` | 每个点代表的正文显示列数，正整数；默认宽度能预览前 80 显示列。设置为 `1` 会保留更细的水平间隙，但同一宽度覆盖的代码更少。 |
-| `min_editor_width` | `48` | 保留给正文的最小列宽；不足时临时隐藏。 |
-| `min_height` | `6` | 正文不足此行数时隐藏。 |
-| `refresh_ms` | `80` | 文本、光标和诊断事件合并刷新的间隔，毫秒。 |
-| `max_lines` / `max_bytes` | `20000` / `1048576` | 超过任一阈值只保留滚动位置指示。 |
-| `max_columns` | `120` | 每行参与编码的显示列上限；实际还受点阵宽度限制。构建字符表前就裁剪极长行。 |
+| `width` | `28` | 面板占用的终端列数，支持 6–40 列。 |
+| `lines_per_row` | `3` | 每个终端行容纳的小字行数，支持 `2` / `3` / `4`；`2` 更大，`4` 更密。 |
+| `min_editor_width` / `min_height` | `48` / `6` | 正文不足此列宽或行数时隐藏。 |
+| `refresh_ms` | `80` | 合并文本、光标、选区和诊断事件，单位毫秒；字体渲染在后台进行。 |
+| `max_lines` / `max_bytes` | `20000` / `1048576` | 超过任一阈值跳过代码渲染，仅保留比例位置阴影。 |
+| `max_columns` | `120` | 每行处理的显示列上限；实际绘制还按图像宽度裁剪。 |
 
-终端窗口不能为某个分屏单独设置更小字号，因此使用带语法颜色的标准 Unicode Braille 点阵表达代码结构；每个终端字符有 2×4 个点，纵向固定压缩 4 行。它保留缩进、空白和语法分区，不拉伸成实心块，也不是可阅读的小字号正文。只读且不接收鼠标点击，正文的光标和视野由原编辑窗口控制。配色在 `config.colorscheme` 的五个 `WorkbenchMinimap*` 高亮组中；背景沿用编辑器底色，视野使用淡底色，光标使用青色，动态生成的 `WorkbenchMinimapInk*` 只提供语法前景色，不盖住视野底色。
+三个背景高亮在 `config.colorscheme`：`WorkbenchMinimap` 沿用编辑器底色；`WorkbenchMinimapView` 为浅色视野；`WorkbenchMinimapActive` 为更深的光标/选区底色。代码只复制语法前景色，不复制正文斜体、加粗或背景。
 
-编码缓存包括文本版本、宽高、预览片段、文件类型、TAB 设置和主题。`ColorScheme` 清除语法配色缓存；`OptionSet` 处理 `tabstop` / `vartabstop` / `syntax` 变化。开启期间用 200 ms 的轻量观察器检测网格变化，处理可视模式延迟派发缩放事件的情况；没有网格变化时不重编码，所有 Tab 都关闭后停止观察器。
+字形模型缓存包含文本版本、宽高、片段、文件类型、TAB 和主题。`ColorScheme` 清除语法色缓存；`OptionSet` 处理 `tabstop` / `vartabstop` / `syntax`。开启期间用 200 ms 观察器检查网格变化，处理可视模式下延迟派发的缩放事件；无变化时不重绘，全部 Tab 关闭后停止观察器。
 
 ### [lua/config/minimap_render.lua](../lua/config/minimap_render.lua)
 
-独立的缩略图渲染模块，不创建窗口或绑定按键。`region()` 选择固定密度的滚动片段，保证文件首尾不被比例位置截掉；存在折叠时也保留光标所在行。`encode()` 将该片段转换为点阵行和连续语法高亮区间。先根据正文的 TAB 停靠点、`vartabstop`、中文/emoji 宽度及组合字符计算显示列，再压缩到点阵。横向超过可用宽度的正文被裁剪，短行不会拉伸；纵向保留空行，长文件不会叠加所有行的非空字符。
+提取原始代码字形、显示列和语法颜色，不创建窗口或编码点阵。`region()` 选择固定字号的滚动片段，保证首尾和折叠中的实际光标行保留；`document()` 返回该片段每一行的真实字符及颜色。TAB、`vartabstop`、中文/emoji 宽度、组合字符按显示列计算，极长行在建立字符表前裁剪，空行与缩进不拉伸。
 
-语法颜色读取 Neovim 的 Tree-sitter 高亮查询，使用捕获范围及优先级，并优先保留注入语言的颜色。没有解析器或查询时在原正文窗口读取内置 syntax；缺少语法也能正常显示单色点阵。颜色仅复制前景，不复制正文的斜体、加粗和背景。`reset_colors()` 由主题切换事件调用。
+使用公开 Tree-sitter 高亮查询与捕获优先级，优先注入语言；没有解析器或查询时在原窗口读取内置 syntax。没有语法工具也能显示单色小字。`reset_colors()` 由主题切换调用。
 
-设计参考 [VS Code 的 minimap](https://code.visualstudio.com/updates/v1_10#_minimap) 和 [neominimap.nvim](https://github.com/Isrothy/neominimap.nvim) 的固定密度点阵思路。这里使用独立实现，不加载 LazyVim 或新增缩略图插件。
+### [lua/config/minimap_image.lua](../lua/config/minimap_image.lua)
+
+终端图像传输与异步工作进程。读取终端 DA1 响应中的 Sixel 能力位，仅向 `stdout_tty` 的 UI 通过 Neovim 0.12 `nvim_ui_send()` 输出图像。没有外部缩略图插件，不加载 LazyVim。图像严格放在缩略图正文矩形内，保留标签、圆角外框和底栏；每次仅擦除该空白区域，透明背景保持准确的主题底色。保存并恢复终端光标及显示模式，图像输出不会移动正文光标。
+
+后台只有一个 Python 进程和一个在途请求，后续请求合并为最新状态；响应必须仍匹配当前来源和有效窗口才显示。关闭窗格时清理记录，全部关闭时停止后台；切换 Tab 时不向隐藏窗口输出。浮窗与缩略图相交时暂停图像显示，浮窗关闭后重新绘制，防止遮住弹窗。
+
+Windows Terminal 的 [SixelParser](https://github.com/microsoft/terminal/blob/main/src/terminal/adapter/SixelParser.cpp) 默认使用 **10×20 虚拟像素格**，随真实终端字号、行高及 DPI 缩放，无需读取物理像素或修改终端字体。`setup(opts)` 中 `cell_width` / `cell_height` 可按其他 Sixel 终端的映射设置；不要把 Windows Terminal 的物理 DPI 尺寸填入这里。其他终端尚未做实机验证。
+
+可选参数 `python` 为单个解释器路径，`font` 为可访问的 TrueType/OpenType 字体路径；默认读取仓库的 `fonts/ForgeMonoGeometry6NF-Regular.ttf`。默认优先使用 `stdpath('data')/workbench-minimap-env` 虚拟环境，缺少时尝试 `python3`。`:MinimapSetup` 主动创建虚拟环境并安装 `Pillow>=12,<13`，不修改系统 Python，也不在启动时下载。`status()` 返回终端能力、后台、错误、在途请求和已输出帧数，供排查使用。
+
+### [scripts/minimap-render.py](../scripts/minimap-render.py)
+
+独立 Pillow 字体栅格化和 Sixel 编码器。通过逐行 JSON 的 stdin/stdout 接收字形、背景与选区模型，输出编码后的图像；脚本自身不接触终端、配置文件或用户工程。字体使用共享基线，邻接的同色 ASCII 合并绘制；中文在存在系统 CJK 字体时补齐。只缓存当前一个代码片段的透明字形层，光标/选区变化重用它，再绘制底色阴影和诊断点。
+
+Sixel 编码只量化抗锯齿颜色，不用方块或 Braille 字符代替文字。背景透明，限制画布尺寸，裁剪范围之外的选区；数据只驻留内存和进程管道，不写出代码图像缓存。可用 `--png` 对显式提供的 JSON 模型生成测试预览。
+
+外观参考 [VS Code minimap](https://code.visualstudio.com/updates/v1_10#_minimap) 的小字体和视野阴影；实现为本仓库独立模块。
 
 ### [tests/smoke.lua](../tests/smoke.lua)
 
@@ -383,9 +400,15 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 ### [tests/minimap_render.lua](../tests/minimap_render.lua)
 
-加载完整配置，检查点阵保留四行和横向空白、短内容不拉伸、TAB 与可变停靠点、中文/emoji/组合字符、长文件片段滚动及首尾、折叠视野中的光标行、极长行提前裁剪、C/C++ / Python / Verilog/SV / Perl / Tcl / Make 的真实 Tree-sitter 配色、Markdown 中注入的 Python、无解析器时的内置 syntax 后备、主题颜色缓存，共 11 类检查。Tree-sitter 配色用例关闭内置 syntax，避免后备配色掩盖查询失效。
+加载完整配置，检查原始字符、横向空白及空行、短内容不拉伸、TAB 与可变停靠点、中文/emoji/组合字符、长文件片段滚动及首尾、折叠视野中的光标行、极长行提前裁剪、C/C++ / Python / Verilog/SV / Perl / Tcl / Make 的真实 Tree-sitter 配色、Markdown 中注入的 Python、无解析器时的内置 syntax 后备、主题颜色缓存，共 11 类检查。Tree-sitter 配色用例关闭内置 syntax，避免后备配色掩盖查询失效。
 
 执行 `nvim --headless -i NONE -S tests/minimap_render.lua`；这些语言配色检查需要已安装相应解析器。
+
+### [tests/test_minimap_pixels.py](../tests/test_minimap_pixels.py)
+
+10 类独立 Python 测试验证真实字形而非占位轮廓、无竖线的视野和光标阴影、字符/整行/矩形选区、越界选区和 Unicode 裁剪、大文件的最小光标标记、画布边界，以及用独立 Sixel 解码器还原图像、透明底色和不完整的六行像素带。
+
+使用已安装 Pillow 的 Python 执行 `python -m unittest discover -s tests -p test_minimap_pixels.py`。不需要运行 Neovim 或修改终端设置。字体/图像测试与 Lua 窗口测试分开，避免功能测试通过却漏掉渲染错误。
 
 ### [tests/portability.lua](../tests/portability.lua)
 
@@ -430,7 +453,7 @@ Python 后台的隔离测试：行高范围、JSONC、重复 profile 要求明�
 | 改底栏组件及排序 | `config.ui`；最终绘制在 `config.footer` |
 | 改欢迎页 logo / 入口 | `config.dashboard` |
 | 改标签文字、布局或点击 | `config.tabs` |
-| 改缩略图宽度、压缩密度、隐藏阈值和刷新频率 | `config.minimap`；点阵及语法颜色在 `config.minimap_render`，背景与标记在 `config.colorscheme` |
+| 改缩略图宽度、小字密度、隐藏阈值和刷新频率 | `config.minimap`；字形与语法色在 `config.minimap_render`，图像传输在 `config.minimap_image`，字体栅格在 `scripts/minimap-render.py` |
 | 改主题与常规高亮 | `config.colorscheme` |
 | 改个人字体模式、profile 或缓存位置 | `local.lua`，由 `local.example.lua` 复制 |
 | 改圆角几何本身 | 字体与三个生成银行一起维护；普通行高调整使用 `:UiLineHeight` |

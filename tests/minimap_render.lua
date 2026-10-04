@@ -1,8 +1,7 @@
--- Run with the complete configuration: nvim --headless -i NONE -S this file.
+-- Source-glyph model checks; run with the full Workbench configuration.
 local api = vim.api
 local renderer = require("config.minimap_render")
-local checks = {}
-local buffers = {}
+local checks, buffers = {}, {}
 local function check(name, action)
   action()
   checks[#checks + 1] = name
@@ -16,102 +15,79 @@ local function source(lines, filetype)
   vim.bo[buf].filetype = filetype or ""
   return buf
 end
-local function encode(buf, options)
-  return renderer.encode(
+local function document(buf, opts)
+  return renderer.document(
     buf,
     vim.tbl_extend("force", {
-      width = 20,
       height = 30,
       offset = 0,
-      column_scale = 1,
+      resolution = 3,
       max_columns = 120,
       source_win = api.nvim_get_current_win(),
-    }, options or {})
+    }, opts or {})
   )
 end
-local function palette(spans)
-  local result = {}
-  for _, span in ipairs(spans) do
-    if span.group ~= "WorkbenchMinimap" then
-      local hl = api.nvim_get_hl(0, { name = span.group, link = false })
-      assert(hl.fg and not hl.bg and not hl.italic and not hl.bold)
-      result[hl.fg] = true
+local function palette(rows)
+  local colors = {}
+  for _, row in ipairs(rows) do
+    for _, glyph in ipairs(row) do
+      assert(type(glyph.char) == "string" and type(glyph.color) == "number")
+      colors[glyph.color] = true
     end
   end
-  return vim.tbl_count(result)
+  return vim.tbl_count(colors)
 end
-
 local ok, failure = xpcall(function()
-  check("fixed 2x4 dots preserve all four source lines and horizontal spaces", function()
-    local buf = source({ "a", " b", "a", " b" })
-    local lines = encode(buf, { width = 3 })
-    assert(lines[1] == vim.fn.nr2char(0x2800 + 1 + 16 + 4 + 128) .. "  ")
-    assert(#lines == 1 and vim.fn.strdisplaywidth(lines[1]) == 3)
-    api.nvim_buf_set_lines(buf, 0, -1, false, { "a", "", "", "", "", "b" })
-    lines = encode(buf, { width = 3 })
-    assert(#lines == 2 and lines[1] == vim.fn.nr2char(0x2801) .. "  ")
-    assert(lines[2] == vim.fn.nr2char(0x2802) .. "  ")
+  check("letters, numbers and punctuation remain actual source glyphs", function()
+    local rows = document(source({ "wire a = 42;", "fire a = 42;" }))
+    assert(rows[1][1].char == "w" and rows[2][1].char == "f")
+    local chars = {}
+    for _, glyph in ipairs(rows[1]) do
+      chars[#chars + 1] = glyph.char
+    end
+    assert(table.concat(chars) == "wirea=42;")
   end)
-  check("short content is not stretched to panel width or height", function()
-    local buf = source({ "a" })
-    local narrow = encode(buf, { width = 5, height = 6 })
-    local wide = encode(buf, { width = 35, height = 60 })
-    assert(#wide == 1 and wide[1]:sub(1, #narrow[1]) == narrow[1])
-    assert(wide[1] == vim.fn.nr2char(0x2801) .. string.rep(" ", 34))
+  check("blank lines and horizontal whitespace keep their original positions", function()
+    local rows = document(source({ "a  b", "", "    c" }))
+    assert(#rows == 3 and #rows[2] == 0)
+    assert(rows[1][2].column == 3 and rows[3][1].column == 4)
   end)
-  check("TAB aligns to stops after text; variable stops are respected", function()
+  check("TAB and variable TAB stops align after preceding text", function()
     local buf = source({ "a\tb" })
-    local with_tab = encode(buf)
+    local first = document(buf)
     api.nvim_buf_set_lines(buf, 0, -1, false, { "a   b" })
-    assert(vim.deep_equal(with_tab, encode(buf)))
+    assert(vim.deep_equal(first, document(buf)))
     api.nvim_buf_set_lines(buf, 0, -1, false, { "a\tb\tc\td" })
     vim.bo[buf].vartabstop = "3,5"
-    with_tab = encode(buf)
+    first = document(buf)
     api.nvim_buf_set_lines(buf, 0, -1, false, { "a  b    c    d" })
-    assert(vim.deep_equal(with_tab, encode(buf)))
+    assert(vim.deep_equal(first, document(buf)))
   end)
-  check("UTF-8 wide and combining characters use display columns", function()
-    local buf = source({ "中é🙂 x" })
-    local wide = encode(buf)
-    api.nvim_buf_set_lines(buf, 0, -1, false, { "aaaaa x" })
-    assert(vim.deep_equal(wide, encode(buf)))
-    api.nvim_buf_set_lines(buf, 0, -1, false, { "a b" })
-    local whitespace = encode(buf)
-    api.nvim_buf_set_lines(buf, 0, -1, false, { "a b" })
-    assert(vim.deep_equal(whitespace, encode(buf)))
+  check("wide and combining UTF-8 glyphs are not duplicated or shifted", function()
+    local row = document(source({ "中é🙂 x" }))[1]
+    assert(#row == 4 and row[1].char == "中" and row[1].width == 2)
+    assert(row[2].char == "é" and row[2].column == 2)
+    assert(row[3].char == "🙂" and row[3].column == 3 and row[4].column == 6)
   end)
-  check("long files scroll a fixed-density slice rather than squeezing ink", function()
-    local lines = {}
-    for row = 1, 400 do
-      lines[row] = row <= 200 and "a" or "  b"
-    end
-    local buf = source(lines)
-    local top = renderer.region(400, 10, 1, 36)
-    local bottom = renderer.region(400, 10, 365, 400)
-    assert(top == 0 and bottom == 90, "Preview omitted the start/end of the document")
-    local preview_top = encode(buf, { offset = top, height = 10 })
-    local preview_bottom = encode(buf, { offset = bottom, height = 10 })
-    assert(#preview_top == 10 and #preview_bottom == 10)
-    assert(preview_top[1] ~= preview_bottom[1])
-    assert(renderer.region(8, 30, 1, 8) == 0)
+  check("long files preserve density and retain both document boundaries", function()
+    local top = renderer.region(400, 10, 1, 30, 1, 3)
+    local bottom = renderer.region(400, 10, 371, 400, 400, 3)
+    assert(top == 0 and bottom == math.ceil(400 / 3) - 10)
+    assert(renderer.region(8, 30, 1, 8, 1, 3) == 0)
   end)
-  check("folded viewport still keeps the actual source cursor in the slice", function()
+  check("folded viewport still contains its actual source cursor", function()
     for _, cursor in ipairs({ 1, 40, 1000, 2000 }) do
-      local offset, rows = renderer.region(2000, 30, 1, 2000, cursor)
-      local row = math.floor((cursor - 1) / 4) - offset
-      assert(row >= 0 and row < rows, "Cursor is absent from the code slice")
+      local offset, rows = renderer.region(2000, 30, 1, 2000, cursor, 3)
+      local y = math.floor((cursor - 1) / 3) - offset
+      assert(y >= 0 and y < rows)
     end
   end)
-  check("very long lines are clipped before building codepoint tables", function()
+  check("extremely long lines are clipped before building glyph tables", function()
     local buf = source({ string.rep("a", 200000) })
-    local lines, spans = encode(buf, { width = 10, max_columns = 7 })
-    api.nvim_buf_set_lines(buf, 0, -1, false, { string.rep("a", 7) })
-    assert(vim.deep_equal(lines, encode(buf, { width = 10, max_columns = 7 })))
-    for _, span in ipairs(spans) do
-      assert(span.start >= 0 and span.finish <= #lines[span.row + 1])
-    end
+    local rows = document(buf, { max_columns = 7 })
+    assert(#rows[1] == 7 and rows[1][7].column == 6)
   end)
-  check("Tree-sitter syntax colours work for HDL, C/C++, Python, Perl, Tcl and Make", function()
+  check("real Tree-sitter colours for HDL, C/C++, Python, Perl, Tcl and Make", function()
     local examples = {
       { "verilog", { "module sample;", "  wire a = 1'b1;", "  // reset", "endmodule" } },
       { "systemverilog", { "module sample;", "  logic a = 1'b1;", "  // reset", "endmodule" } },
@@ -127,43 +103,33 @@ local ok, failure = xpcall(function()
       assert(vim.treesitter.highlighter.active[buf], "Parser absent: " .. example[1])
       vim.bo[buf].syntax = ""
       vim.cmd("syntax clear")
-      local _, spans = encode(buf)
-      assert(palette(spans) >= 2, "No syntax colour variation: " .. example[1])
+      assert(palette(document(buf)) >= 2, "Missing colours: " .. example[1])
     end
   end)
-  check("injected Python retains its syntax colours inside Markdown", function()
+  check("injected Python retains its colours inside Markdown", function()
     local buf = source({ "```python", "def example(x):", "    return x + 42", "```" }, "markdown")
     vim.bo[buf].syntax = ""
     vim.cmd("syntax clear")
-    local _, spans = encode(buf)
-    assert(palette(spans) >= 2, "Injected code lost its colours")
+    assert(palette(document(buf)) >= 2)
   end)
-  check("missing parser falls back to built-in syntax without errors", function()
+  check("absent parser uses built-in syntax; style/background are not copied", function()
     local buf = source({ "hello plain" }, "workbench-minimap-test")
     vim.cmd("syntax clear")
     vim.cmd("syntax match MinimapFallback /hello/")
-    api.nvim_set_hl(0, "MinimapFallback", { fg = "#ee99a0", italic = true })
-    local _, spans = encode(buf)
-    assert(palette(spans) >= 1)
-    local found = false
-    for _, span in ipairs(spans) do
-      found = found or api.nvim_get_hl(0, { name = span.group, link = false }).fg == 0xee99a0
-    end
-    assert(found, "Fallback syntax colour missing")
+    api.nvim_set_hl(0, "MinimapFallback", { fg = "#ee99a0", bg = "#000000", italic = true })
+    local rows = document(buf)
+    assert(rows[1][1].color == 0xee99a0 and rows[1][1].bg == nil)
   end)
-  check("colour cache can follow a changed theme without copying background/style", function()
+  check("colour cache follows a changed theme", function()
     local buf = source({ "hello" }, "workbench-minimap-test")
     vim.cmd("syntax clear")
     vim.cmd("syntax match MinimapFallback /hello/")
-    api.nvim_set_hl(0, "MinimapFallback", { fg = "#8aadf4", bg = "#000000", bold = true })
+    api.nvim_set_hl(0, "MinimapFallback", { fg = "#8aadf4" })
     renderer.reset_colors()
-    local _, spans = encode(buf)
-    assert(palette(spans) == 1)
-    assert(api.nvim_get_hl(0, { name = spans[1].group, link = false }).fg == 0x8aadf4)
+    assert(document(buf)[1][1].color == 0x8aadf4)
   end)
   assert(vim.v.errmsg == "", vim.v.errmsg)
 end, debug.traceback)
-
 for _, buf in ipairs(buffers) do
   pcall(api.nvim_buf_delete, buf, { force = true })
 end

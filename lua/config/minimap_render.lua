@@ -1,8 +1,6 @@
--- Fixed-scale, syntax-coloured Braille: never stretch text into solid blocks.
+-- Source glyphs and syntax colours for the pixel renderer. No block encoding.
 local M = {}
 local api = vim.api
-local bit = require("bit")
-local dots = { { 1, 8 }, { 2, 16 }, { 4, 32 }, { 64, 128 } }
 local highlights = {}
 
 function M.reset_colors()
@@ -11,32 +9,30 @@ end
 
 local function ink(group)
   if not group or group == "" then
-    return "WorkbenchMinimap"
+    group = "WorkbenchMinimap"
   end
   if highlights[group] then
     return highlights[group]
   end
   local color = api.nvim_get_hl(0, { name = group, link = false }).fg
   if not color then
-    highlights[group] = "WorkbenchMinimap"
-    return "WorkbenchMinimap"
+    color = api.nvim_get_hl(0, { name = "WorkbenchMinimap", link = false }).fg or 0x8087a2
   end
-  local name = string.format("WorkbenchMinimapInk%06x", color)
-  -- Foreground only: viewport shading remains visible under syntax colours.
-  api.nvim_set_hl(0, name, { fg = color })
-  highlights[group] = name
-  return name
+  highlights[group] = color
+  return color
 end
 
--- Four source lines per terminal cell, with a scrolling slice for long files.
+-- Fixed source lines per terminal row, with a scrolling slice for long files.
 -- The slice follows the editor viewport rather than jumping on every keystroke.
-function M.region(count, height, first, last, cursor)
-  local total = math.ceil(count / 4)
+function M.region(count, height, first, last, cursor, resolution)
+  resolution = resolution or 3
+  local total = math.ceil(count / resolution)
   local fraction = math.max(0, math.min(1, ((first + last) / 2 - 1) / math.max(1, count - 1)))
   local maximum = math.max(0, total - height)
   local offset = math.floor(maximum * fraction)
   local low, high =
-    math.max(0, math.ceil(last / 4) - height), math.min(maximum, math.floor((first - 1) / 4))
+    math.max(0, math.ceil(last / resolution) - height),
+    math.min(maximum, math.floor((first - 1) / resolution))
   -- Proportional placement alone can cut off the start/end of the document.
   -- Keep the entire visible range whenever it fits inside the code slice.
   if low <= high then
@@ -44,7 +40,7 @@ function M.region(count, height, first, last, cursor)
   end
   -- Closed folds can make w0..w$ span more source lines than fit. Even then,
   -- the actual cursor must be in the slice, not falsely clamped onto an edge.
-  local focus = math.floor(((cursor or math.floor((first + last) / 2)) - 1) / 4)
+  local focus = math.floor(((cursor or math.floor((first + last) / 2)) - 1) / resolution)
   offset = math.max(0, math.min(maximum, math.min(focus, math.max(offset, focus - height + 1))))
   return offset, math.min(total - offset, height)
 end
@@ -71,7 +67,14 @@ local function points(text, tabstop, vartabstop, limit)
     else
       if not char:match("^%s+$") and char ~= " " and width > 0 then
         for extra = 0, math.min(width, limit - column) - 1 do
-          result[#result + 1] = { column = column + extra, byte = byte, priority = -1 }
+          result[#result + 1] = {
+            column = column + extra,
+            byte = byte,
+            priority = -1,
+            char = char,
+            lead = extra == 0,
+            width = width,
+          }
         end
       end
       column = column + width
@@ -126,9 +129,9 @@ local function tree_colors(buf, rows, start, finish)
   return ok and painted
 end
 
-function M.encode(buf, opts)
-  local start = opts.offset * 4
-  local finish = math.min(api.nvim_buf_line_count(buf), start + opts.height * 4)
+function M.document(buf, opts)
+  local start = opts.offset * opts.resolution
+  local finish = math.min(api.nvim_buf_line_count(buf), start + opts.height * opts.resolution)
   local source = api.nvim_buf_get_lines(buf, start, finish, false)
   local tabstop = vim.bo[buf].tabstop
   local vartabstop = {}
@@ -136,7 +139,7 @@ function M.encode(buf, opts)
     vartabstop[#vartabstop + 1] = tonumber(value)
   end
   local rows = {}
-  local limit = math.min(opts.max_columns, opts.width * 2 * opts.column_scale)
+  local limit = opts.max_columns
   for index, text in ipairs(source) do
     rows[index] = points(text, tabstop, vartabstop, limit)
   end
@@ -150,51 +153,22 @@ function M.encode(buf, opts)
       end
     end)
   end
-  local cells = {}
+  local result = {}
   for index, row in ipairs(rows) do
-    local y = math.floor((index - 1) / 4) + 1
-    cells[y] = cells[y] or {}
+    local cells = {}
     for _, point in ipairs(row) do
-      local x = math.floor(point.column / opts.column_scale)
-      local col = math.floor(x / 2) + 1
-      local cell = cells[y][col] or { mask = 0, groups = {} }
-      cells[y][col] = cell
-      cell.mask = bit.bor(cell.mask, dots[(index - 1) % 4 + 1][x % 2 + 1])
-      local group = ink(point.group or "WorkbenchMinimap")
-      cell.groups[group] = (cell.groups[group] or 0) + 1
-    end
-  end
-  local lines, spans = {}, {}
-  for y = 1, math.max(1, math.ceil(#source / 4)) do
-    local chars, previous, run, byte = {}, nil, nil, 0
-    for x = 1, opts.width do
-      local cell = (cells[y] or {})[x]
-      local char = cell and vim.fn.nr2char(0x2800 + cell.mask) or " "
-      chars[x] = char
-      local group, weight = "WorkbenchMinimap", -1
-      if cell then
-        -- Sorted ties make syntax colour choice reproducible across refreshes.
-        for _, name in ipairs(vim.tbl_keys(cell.groups)) do
-          local score = cell.groups[name]
-          if score > weight or (score == weight and name < group) then
-            group, weight = name, score
-          end
-        end
+      if point.lead then
+        cells[#cells + 1] = {
+          column = point.column,
+          char = point.char,
+          width = point.width,
+          color = ink(point.group),
+        }
       end
-      if group ~= previous then
-        if run then
-          run.finish = byte
-        end
-        run = { row = y - 1, start = byte, group = group }
-        spans[#spans + 1] = run
-        previous = group
-      end
-      byte = byte + #char
     end
-    run.finish = byte
-    lines[y] = table.concat(chars)
+    result[index] = cells
   end
-  return lines, spans
+  return result
 end
 
 return M
