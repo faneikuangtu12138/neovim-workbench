@@ -74,6 +74,7 @@ local ok, failure = xpcall(function()
     local diag_ns = api.nvim_create_namespace("WorkbenchMinimapRegressionDiagnostics")
     vim.diagnostic.set(diag_ns, buf, {
       { lnum = 120, col = 0, severity = vim.diagnostic.severity.WARN, message = "test warning" },
+      { lnum = 0, col = 0, severity = vim.diagnostic.severity.ERROR, message = "outside slice" },
     })
     minimap.refresh()
     local namespaces = api.nvim_get_namespaces()
@@ -84,7 +85,10 @@ local ok, failure = xpcall(function()
       -1,
       { details = true }
     )
-    assert(#marks == 1 and marks[1][4].virt_text[1][2] == "DiagnosticWarn")
+    assert(
+      #marks == 1 and marks[1][4].virt_text[1][2] == "DiagnosticWarn",
+      "A diagnostic outside the code slice was clamped onto its edge"
+    )
     api.nvim_feedkeys(api.nvim_replace_termcodes("<Space>ud", true, false, true), "xt", false)
     assert(not vim.diagnostic.is_enabled({ bufnr = buf }))
     marks = api.nvim_buf_get_extmarks(target, namespaces.WorkbenchMinimapContent, 0, -1, {})
@@ -106,6 +110,51 @@ local ok, failure = xpcall(function()
     vim.cmd.write()
     vim.diagnostic.reset(diag_ns, buf)
   end)
+  check(
+    "long code preview scrolls at fixed density and refreshes syntax after theme changes",
+    function()
+      local lines = {}
+      for index = 1, 400 do
+        lines[index] = index <= 200 and "wire a;" or "        assign b = 1'b1;"
+      end
+      api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      api.nvim_win_set_cursor(editor, { 1, 0 })
+      vim.cmd("normal! zz")
+      settle()
+      local target = api.nvim_win_get_buf(minimap.window())
+      local top = api.nvim_buf_get_lines(target, 0, -1, false)
+      api.nvim_win_set_cursor(editor, { 400, 0 })
+      vim.cmd("normal! zz")
+      settle()
+      local bottom = api.nvim_buf_get_lines(target, 0, -1, false)
+      assert(
+        #top == #bottom and not vim.deep_equal(top, bottom),
+        "Long preview was squeezed to fit"
+      )
+      vim.cmd.colorscheme("catppuccin")
+      settle()
+      local marks = api.nvim_buf_get_extmarks(
+        target,
+        api.nvim_get_namespaces().WorkbenchMinimapSyntax,
+        0,
+        -1,
+        { details = true }
+      )
+      local colors = {}
+      for _, mark in ipairs(marks) do
+        local name = mark[4].hl_group
+        local hl = api.nvim_get_hl(0, { name = name, link = false })
+        if hl.fg then
+          colors[hl.fg] = true
+        end
+      end
+      assert(vim.tbl_count(colors) >= 2, "Theme reload erased minimap syntax colours")
+      assert_owner(editor, buf, { 400, 0 })
+      api.nvim_buf_set_lines(buf, 0, -1, false, { "module short;", "endmodule" })
+      vim.cmd.write()
+      settle()
+    end
+  )
   check("tree and Ctrl-w navigation skip minimap after save", function()
     navigation.focus_tree()
     settle()

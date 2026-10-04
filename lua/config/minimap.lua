@@ -3,18 +3,21 @@ local api = vim.api
 local states = {}
 local content_ns = api.nvim_create_namespace("WorkbenchMinimapContent")
 local view_ns = api.nvim_create_namespace("WorkbenchMinimapView")
+local syntax_ns = api.nvim_create_namespace("WorkbenchMinimapSyntax")
 local pending, busy = false, false
 local timer, last_grid
+local color_epoch = 0
 
 -- A native companion split reserves space instead of covering source text.
 -- It shares its owner's outer frame and is skipped by pane navigation.
 M.config = {
-  width = 14,
+  width = 24,
   min_editor_width = 48,
   min_height = 6,
   max_lines = 20000,
   max_bytes = 1024 * 1024,
-  max_columns = 240,
+  max_columns = 120,
+  column_scale = 2,
   refresh_ms = 80,
 }
 
@@ -179,9 +182,10 @@ function M.sync()
 end
 
 local function row_for(state, line)
-  local scaled = math.min(state.count, state.height * state.resolution) / state.count
-  return math.min(state.rows, math.floor(math.floor((line - 1) * scaled) / state.resolution) + 1)
-    - 1
+  if state.large then
+    return math.min(state.rows - 1, math.floor((line - 1) * state.rows / state.count))
+  end
+  return math.floor((line - 1) / 4) - state.offset
 end
 
 function M.paint()
@@ -194,30 +198,46 @@ function M.paint()
   local target = api.nvim_win_get_buf(state.win)
   local height, width = api.nvim_win_get_height(state.win), api.nvim_win_get_width(state.win)
   local count, tick = api.nvim_buf_line_count(buf), api.nvim_buf_get_changedtick(buf)
-  local key = { buf, tick, height, width }
+  local first, last = unpack(api.nvim_win_call(state.source, function()
+    return { vim.fn.line("w0"), vim.fn.line("w$") }
+  end))
+  local renderer = require("config.minimap_render")
+  local cursor_line = api.nvim_win_get_cursor(state.source)[1]
+  local offset = renderer.region(count, height, first, last, cursor_line)
+  local key = {
+    buf,
+    tick,
+    height,
+    width,
+    offset,
+    vim.bo[buf].filetype,
+    vim.bo[buf].tabstop,
+    vim.bo[buf].vartabstop,
+    M.config.column_scale,
+    M.config.max_columns,
+    M.config.max_lines,
+    M.config.max_bytes,
+    color_epoch,
+    vim.treesitter.highlighter.active[buf] ~= nil,
+  }
   if not vim.deep_equal(state.encoded, key) then
-    local lines
+    local lines, spans
     local large = count > M.config.max_lines
       or api.nvim_buf_get_offset(buf, count) > M.config.max_bytes
     if large then
       -- Keep a useful proportional scrollbar without encoding huge files.
       lines = vim.fn["repeat"]({ string.rep(" ", width) }, height)
     else
-      local source = api.nvim_buf_get_lines(buf, 0, -1, false)
-      for index, text in ipairs(source) do
-        source[index] = vim.fn
-          .strcharpart(text, 0, M.config.max_columns)
-          :gsub("\t", string.rep(" ", vim.bo[buf].tabstop))
-      end
-      lines = require("mini.map").encode_strings(source, {
-        n_rows = height,
-        n_cols = width - 3,
-        symbols = require("mini.map").gen_encode_symbols.block("2x2"),
+      lines, spans = renderer.encode(buf, {
+        source_win = state.source,
+        offset = offset,
+        height = height,
+        width = width - 4,
+        column_scale = M.config.column_scale,
+        max_columns = M.config.max_columns,
       })
       for index, text in ipairs(lines) do
-        lines[index] = "   "
-          .. text
-          .. string.rep(" ", math.max(0, width - 3 - vim.fn.strdisplaywidth(text)))
+        lines[index] = "   " .. text .. " "
       end
     end
     vim.bo[target].modifiable = true
@@ -225,7 +245,15 @@ function M.paint()
     vim.bo[target].modified = false
     vim.bo[target].modifiable = false
     state.encoded, state.count, state.height, state.rows = key, count, height, #lines
-    state.resolution = large and 1 or 2
+    state.large, state.offset = large, offset
+    api.nvim_buf_clear_namespace(target, syntax_ns, 0, -1)
+    for _, span in ipairs(spans or {}) do
+      api.nvim_buf_set_extmark(target, syntax_ns, span.row, span.start + 3, {
+        end_col = span.finish + 3,
+        hl_group = span.group,
+        priority = 40,
+      })
+    end
   end
   api.nvim_buf_clear_namespace(target, content_ns, 0, -1)
   local diagnostics, visible_namespaces = {}, {}
@@ -238,7 +266,9 @@ function M.paint()
       end
       if not namespace or visible_namespaces[namespace] then
         local row = row_for(state, item.lnum + 1)
-        diagnostics[row] = math.min(diagnostics[row] or 4, item.severity)
+        if row >= 0 and row < state.rows then
+          diagnostics[row] = math.min(diagnostics[row] or 4, item.severity)
+        end
       end
     end
   end
@@ -251,13 +281,10 @@ function M.paint()
     })
   end
   api.nvim_buf_clear_namespace(target, view_ns, 0, -1)
-  local first, last = unpack(api.nvim_win_call(state.source, function()
-    return { vim.fn.line("w0"), vim.fn.line("w$") }
-  end))
-  for row = row_for(state, first), row_for(state, last) do
+  for row = math.max(0, row_for(state, first)), math.min(state.rows - 1, row_for(state, last)) do
     api.nvim_buf_set_extmark(target, view_ns, row, 0, {
       line_hl_group = "WorkbenchMinimapView",
-      virt_text = { { "┃", "WorkbenchMinimapScrollbar" } },
+      virt_text = { { "│", "WorkbenchMinimapScrollbar" } },
       virt_text_pos = "overlay",
       priority = 10,
     })
@@ -265,7 +292,7 @@ function M.paint()
   api.nvim_buf_set_extmark(
     target,
     view_ns,
-    row_for(state, api.nvim_win_get_cursor(state.source)[1]),
+    math.max(0, math.min(state.rows - 1, row_for(state, cursor_line))),
     0,
     {
       virt_text = { { "▸", "WorkbenchMinimapCursor" } },
@@ -273,6 +300,20 @@ function M.paint()
       priority = 20,
     }
   )
+  if not state.large and math.ceil(count / 4) > height then
+    -- A separate, thin overview indicator retains whole-file position while
+    -- the fixed-density code preview scrolls through a slice of the file.
+    local top = math.floor((first - 1) * height / count)
+    local bottom = math.min(height - 1, math.max(top, math.ceil(last * height / count) - 1))
+    for row = top, bottom do
+      api.nvim_buf_set_extmark(target, view_ns, row, 0, {
+        virt_text = { { "▏", "WorkbenchMinimapProgress" } },
+        virt_text_pos = "overlay",
+        virt_text_win_col = width - 1,
+        priority = 10,
+      })
+    end
+  end
   api.nvim_win_set_cursor(state.win, { 1, 0 })
 end
 
@@ -327,6 +368,10 @@ end
 function M.setup(opts)
   M.config = vim.tbl_extend("force", M.config, opts or {})
   assert(M.config.width >= 6 and M.config.width <= 40, "Minimap width must be 6–40 columns")
+  assert(
+    M.config.column_scale >= 1 and M.config.column_scale == math.floor(M.config.column_scale),
+    "Minimap column_scale must be a positive integer"
+  )
   local group = api.nvim_create_augroup("WorkbenchMinimap", { clear = true })
   api.nvim_create_autocmd({
     "WinEnter",
@@ -342,9 +387,14 @@ function M.setup(opts)
     "WinScrolled",
     "DiagnosticChanged",
     "CmdlineLeave",
+    "FileType",
   }, {
     group = group,
-    callback = function()
+    callback = function(event)
+      if event.event == "ColorScheme" then
+        color_epoch = color_epoch + 1
+        require("config.minimap_render").reset_colors()
+      end
       if pending or not M.is_enabled() then
         return
       end
@@ -355,6 +405,17 @@ function M.setup(opts)
           M.refresh()
         end
       end, M.config.refresh_ms)
+    end,
+  })
+  api.nvim_create_autocmd("OptionSet", {
+    group = group,
+    pattern = { "tabstop", "vartabstop", "syntax" },
+    callback = function()
+      local state = states[api.nvim_get_current_tabpage()]
+      if state and state.enabled then
+        state.encoded = nil
+        M.refresh()
+      end
     end,
   })
   api.nvim_create_autocmd("QuitPre", {
