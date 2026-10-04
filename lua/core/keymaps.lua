@@ -104,6 +104,7 @@ map("n", "<leader>uk", function()
   require("screenkey").toggle_statusline_component()
   require("lualine").refresh({ place = { "statusline" } })
 end, "Toggle Key Display")
+map("n", "<leader>uv", "<cmd>MinimapToggle<CR>", "Toggle Code Minimap")
 map("n", "<leader>uw", function()
   vim.wo.wrap = not vim.wo.wrap
 end, "Toggle Line Wrap")

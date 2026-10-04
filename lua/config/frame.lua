@@ -3,6 +3,14 @@ local api = vim.api
 local states, previous, focused = {}, {}, {}
 local busy, pending = false, false
 
+local function span(win)
+  local minimap = package.loaded["config.minimap"]
+  if minimap then
+    return minimap.span(win)
+  end
+  return win, api.nvim_win_get_width(win)
+end
+
 function M.is_frame(win)
   return win
     and api.nvim_win_is_valid(win)
@@ -178,7 +186,7 @@ function M.panes()
         win = win,
         row = p[1],
         col = p[2],
-        width = api.nvim_win_get_width(win),
+        width = select(2, span(win)),
         height = api.nvim_win_get_height(win),
         left = api.nvim_win_get_position(state.left)[2],
         right = api.nvim_win_get_position(state.right)[2],
@@ -196,6 +204,10 @@ function M.refresh()
   pending = false
   if busy or vim.v.exiting ~= vim.NIL then
     return
+  end
+  local minimap = package.loaded["config.minimap"]
+  if minimap then
+    minimap.sync()
   end
   local tab, windows =
     api.nvim_get_current_tabpage(), content_windows(api.nvim_get_current_tabpage())
@@ -280,17 +292,19 @@ function M.refresh()
       local state = states[win] or {}
       states[win] = state
       for _, side in ipairs({ "left", "right" }) do
+        local anchor, width = span(win)
+        anchor = side == "right" and anchor or win
         if not M.is_frame(state[side]) then
-          state[side] = rail(win, side)
+          state[side] = rail(anchor, side)
         end
         local p, q = api.nvim_win_get_position(win), api.nvim_win_get_position(state[side])
-        local expected = side == "left" and p[2] - 2 or p[2] + api.nvim_win_get_width(win) + 1
+        local expected = side == "left" and p[2] - 2 or p[2] + width + 1
         if
           q[1] ~= p[1]
           or q[2] ~= expected
           or api.nvim_win_get_height(state[side]) ~= api.nvim_win_get_height(win)
         then
-          api.nvim_win_set_config(state[side], { split = side, win = win, width = 1 })
+          api.nvim_win_set_config(state[side], { split = side, win = anchor, width = 1 })
         end
         if api.nvim_win_get_width(state[side]) ~= 1 then
           api.nvim_win_set_width(state[side], 1)
@@ -346,7 +360,7 @@ function M.refresh()
             state,
             key,
             p[1],
-            side == "left" and p[2] - 1 or p[2] + api.nvim_win_get_width(win),
+            side == "left" and p[2] - 1 or p[2] + select(2, span(win)),
             topedge,
             1,
             1,
@@ -381,6 +395,9 @@ function M.refresh()
     end
     vim.cmd.redrawtabline()
     require("config.footer").refresh()
+    if minimap then
+      minimap.paint()
+    end
   end)
   vim.o.winminwidth = minwidth
   busy = false

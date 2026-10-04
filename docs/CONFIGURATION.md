@@ -20,7 +20,8 @@
 6. `config.ui`：配置插件，并调用 `config.tabs.setup()`；标签模块读取 `config.shapes` 和字形银行。
 7. `config.appearance.setup(terminal_ui)`：注册行高命令，启动时不执行终端后台脚本。
 8. `config.frame.setup()`：启用原生窗格轮廓，同时启用 `config.footer`、`config.resize`。
-9. `config.dashboard` → `core.keymaps`：欢迎页和最终通用按键。
+9. `config.minimap.setup()`：注册代码缩略图命令与刷新事件，默认不开窗。
+10. `config.dashboard` → `core.keymaps`：欢迎页和最终通用按键。
 
 这些模块还会在事件回调中互相调用。核心关系为：
 
@@ -37,6 +38,8 @@ flowchart TD
   Frame --> Tabs
   Frame --> Resize[config.resize]
   Frame --> Footer[config.footer]
+  Frame --> Minimap[config.minimap]
+  Minimap --> Encoder[mini.map / encode_strings]
   Footer --> Capsules[config.footer_capsules]
   Capsules --> Shapes
   Init --> Appearance[config.appearance]
@@ -324,6 +327,25 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 仓库自己的 Lua 格式化规则：2 空格、列宽 100、偏好双引号、固定函数调用括号。它影响配置源文件的 StyLua 格式，不把 C++ / Python / HDL 的编辑缩进变成 2。修改配置仓库风格时改这里；其他工程使用各自的格式化配置。
 
+### [lua/config/minimap.lua](../lua/config/minimap.lua)
+
+右侧代码缩略图的开关、原生辅助 split、编码、视野/光标/诊断标记和生命周期管理。复用已安装 `mini.nvim` 中 `mini.map.encode_strings()` 的公开接口；自行管理窗口几何，不使用 mini.map 默认的全屏浮窗。辅助窗口使用 `workbench-frame` 文件类型和 `minimap` 角色，窗口导航、文件标签和底栏跳过它；`span()` 向 `config.frame` 提供合并宽度，使标签和外边框覆盖正文与缩略图。
+
+默认不开启。`core.keymaps` 的 `<leader>uv` 调用 `:MinimapToggle`；另有 `:MinimapOpen` 和 `:MinimapClose`。开关按 Tab page 独立保存，切换文件与真实编辑分屏时跟随正文来源。欢迎页不编码；文件树聚焦时保留最近编辑文件。宽度不足时暂停显示，重新放大后恢复，开关不会被自动清除。大文件只显示比例滚动条，不生成代码轮廓。
+
+在本模块的 `M.config` 修改默认值，也可在 `init.lua` 的 `setup({ ... })` 中传入覆盖值，修改后重启：
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `width` | `14` | 缩略图列宽，支持 6–40 列；3 列用于位置/诊断与间隔。 |
+| `min_editor_width` | `48` | 保留给正文的最小列宽；不足时临时隐藏。 |
+| `min_height` | `6` | 正文不足此行数时隐藏。 |
+| `refresh_ms` | `80` | 文本、光标和诊断事件合并刷新的间隔，毫秒。 |
+| `max_lines` / `max_bytes` | `20000` / `1048576` | 超过任一阈值只保留滚动位置指示。 |
+| `max_columns` | `240` | 每行编码前读取的最大字符数，限制极长行的开销。 |
+
+代码轮廓按 2×2 字符区域压缩为标准 Unicode 四分块图，不是可阅读的小字号代码。只读且不接收鼠标点击，正文的光标和视野由原编辑窗口控制。配色在 `config.colorscheme` 的四个 `WorkbenchMinimap*` 高亮组中；背景沿用编辑器底色，视野使用主题表面色，光标使用青色。开启期间用 200 ms 的轻量观察器检测网格变化，处理可视模式延迟派发缩放事件的情况；没有网格变化时不重编码，所有 Tab 都关闭后停止观察器。
+
 ### [tests/smoke.lua](../tests/smoke.lua)
 
 基础工作流验证入口，共 15 类检查：配置与命令、实际插件 revision 与 lock 一致、本地几何缓存同步、10 类文件的识别与真实 TAB 输入、RTL 片段的 4 / 8 空格，以及新文件编辑保存后重复进入树和返回编辑区。使用临时文件，不修改终端设置。
@@ -341,6 +363,12 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 加载完整配置，检查实际标签行文本、原生边框缓冲区和正文起始行。覆盖第一个/第二个标签选中、编辑区/文件树焦点、窄窗口裁剪、恢复窗口和切回首标签，共 7 类检查。第二个标签选中时，第一个标签左边界内缩一列，与正文圆角的顶部端点连接；文字起始位置和正文高度不变。第一个可见标签选中时，标签承担外围圆角，正文侧边连续向下。
 
 使用当前配置执行 `nvim --headless -i NONE -S tests/tab_corner.lua`；独立应用名安装需先按 README 设置应用名。这个测试验证结构和状态切换，像素连接还需用实际终端或原生字形栅格检查；本次另外检查了 Geometry 模式 96/192 DPI 下的粗/细边框连接。
+
+### [tests/minimap.lua](../tests/minimap.lua)
+
+加载完整配置，验证默认关闭和欢迎页等待、独立宽度与连续编辑器轮廓、代码/诊断/编辑刷新、保存后文件树与窗口导航、快捷键/命令及空间回收、窄窗隐藏与恢复、多标签和分屏跟随、关闭来源窗口、大文件比例指示及 Tab page 开关隔离，共 9 类检查。操作临时文件，不修改终端设置。
+
+使用当前配置执行 `nvim --headless -i NONE -S tests/minimap.lua`；独立应用名安装先按 README 设置应用名。窗口像素外观仍需结合实际终端验证。
 
 ### [tests/portability.lua](../tests/portability.lua)
 
@@ -385,6 +413,7 @@ Python 后台的隔离测试：行高范围、JSONC、重复 profile 要求明�
 | 改底栏组件及排序 | `config.ui`；最终绘制在 `config.footer` |
 | 改欢迎页 logo / 入口 | `config.dashboard` |
 | 改标签文字、布局或点击 | `config.tabs` |
+| 改缩略图宽度、隐藏阈值和刷新频率 | `config.minimap`；配色在 `config.colorscheme` |
 | 改主题与常规高亮 | `config.colorscheme` |
 | 改个人字体模式、profile 或缓存位置 | `local.lua`，由 `local.example.lua` 复制 |
 | 改圆角几何本身 | 字体与三个生成银行一起维护；普通行高调整使用 `:UiLineHeight` |

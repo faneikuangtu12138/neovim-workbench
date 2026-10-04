@@ -128,6 +128,8 @@ Git hunk 操作只在 GitSigns 已附加的缓冲区生效：
 | 按键 / 命令 | 操作 |
 | --- | --- |
 | `<leader>uk` | 切换底栏按键记录 |
+| `<leader>uv` / `:MinimapToggle` | 显示 / 隐藏右侧代码缩略图 |
+| `:MinimapOpen` / `:MinimapClose` | 明确打开 / 关闭缩略图，重复执行不会创建多个窗格 |
 | `<leader>uw` | 切换当前窗口的自动折行 |
 | `<leader>ud` | 切换当前缓冲区诊断 |
 | `<leader>uh` | 切换内联提示，实际显示取决于服务能力 |
@@ -140,3 +142,5 @@ Git hunk 操作只在 GitSigns 已附加的缓冲区生效：
 | `:lua vim.pack.update()` | 更新插件与锁文件 |
 
 专用圆角字体和 Windows Terminal 行高设置见仓库 [README](../README.md)。快捷键源文件为 [keymaps.lua](../lua/core/keymaps.lua)，语言操作在 [languages.lua](../lua/config/languages.lua)，格式化操作在 [formatting.lua](../lua/config/formatting.lua)。
+
+缩略图默认关闭，按空格 → `u` → `v` 切换。它跟随最近聚焦的正文窗口，文件树获得焦点时保留该文件的轮廓；键盘窗口导航跳过缩略图。当前视野以浅色背景与左侧竖线标示，光标用青色三角标记，诊断用彩色圆点标示。它是只读概览，不接收鼠标点击或键盘焦点。窄窗中临时隐藏不会清除开关状态；若只想关闭，仍可再次使用快捷键。超过 20,000 行或 1 MiB 时保留滚动位置指示，跳过代码轮廓编码。

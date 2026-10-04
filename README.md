@@ -69,6 +69,8 @@ nvim
 
 按 `<Space>e` 切换文件树焦点；`Ctrl+h/j/k/l` 在实际内容窗格之间移动。文件树中按 `a` 新建文件或目录，回车打开，详细操作见 [快捷键](docs/KEYMAPS.md)。
 
+按 `<Space>uv` 显示 / 隐藏右侧代码缩略图，也可使用 `:MinimapOpen`、`:MinimapClose`、`:MinimapToggle`。默认关闭；缩略图与编辑区共用外围边框，标出当前视野、光标和诊断位置，切换文件时同步更新。它显示代码结构的压缩轮廓，文字不作为可读的小字号正文。窗口太窄时暂时隐藏，恢复宽度后自动出现；欢迎页与工具窗口不生成缩略图。开关按 Neovim Tab page 独立保存，仅在当前会话生效。
+
 ## 自定义
 
 在配置目录中将 `local.example.lua` 复制为 **`local.lua`**，编辑这个文件。它会在插件与界面加载前读取，而且已被 Git 忽略，不会随着仓库更新被覆盖或上传。
@@ -95,6 +97,7 @@ return {
 | 行号、鼠标、搜索、默认缩进 | [core/options.lua](lua/core/options.lua) |
 | 快捷键与文件树焦点 | [core/keymaps.lua](lua/core/keymaps.lua)、[core/navigation.lua](lua/core/navigation.lua) |
 | 配色、标签、文件树、欢迎页 | [colorscheme.lua](lua/config/colorscheme.lua)、[tabs.lua](lua/config/tabs.lua)、[neotree.lua](lua/config/neotree.lua)、[dashboard.lua](lua/config/dashboard.lua) |
+| 缩略图宽度、隐藏阈值和刷新频率 | [minimap.lua](lua/config/minimap.lua) |
 | 各语言缩进、格式化、保存时格式化 | [core/autocmds.lua](lua/core/autocmds.lua)、[formatting.lua](lua/config/formatting.lua) |
 | LSP、解析器、补全、模板 | [languages.lua](lua/config/languages.lua)、[treesitter.lua](lua/config/treesitter.lua)、[completion.lua](lua/config/completion.lua)、[snippets/](snippets/) |
 | Verilog/SV 检查与补全隔离 | [hdl.lua](lua/config/hdl.lua)、[语言说明](docs/LANGUAGES.md#verilog--systemverilog) |
@@ -126,6 +129,8 @@ PowerShell 中设置应用名后，运行 `nvim --headless -i NONE -S tests/smok
 安装 Verible 后，可运行 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/hdl.lua` 验证 Verilog/SV 诊断、命名约束、代码修复、头文件、混合工程客户端及真实补全来源。安装了 Icarus Verilog 时，还会用 Verilog-2001 模式编译展开的模板；在 Fedora WSL 中这 11 类检查全部通过。
 
 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/tab_corner.lua` 检查标签与正文的左上连接、两种焦点和窗口裁剪/恢复，共 7 类检查。实际像素外观仍需结合终端字体验证。
+
+`NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/minimap.lua` 验证缩略图开关、布局空间回收、诊断与编辑更新、文件树导航、窄窗口恢复、多文件/分屏跟随、大文件滚动条和 Tab page 隔离。
 
 发布前已在 Fedora WSL 验证首次下载 20 个插件、15 类工作流检查、41 项平台分支检查和 4 项 Python 测试；实际 Neovim 网格也验证了兼容/Geometry 模式的文件树切换、多标签和极窄窗口恢复，含插入/可视模式。平台分支模拟不等于原生 Windows/macOS 的实机验证。
 
