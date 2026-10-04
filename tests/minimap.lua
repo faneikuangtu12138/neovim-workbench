@@ -176,6 +176,22 @@ local ok, failure = xpcall(function()
   check("narrow editor hides map and larger editor restores it", function()
     local current, current_buf = api.nvim_get_current_win(), api.nvim_get_current_buf()
     local current_cursor = api.nvim_win_get_cursor(current)
+    vim.o.columns = 100
+    settle()
+    local map = assert(minimap.window(), "Adaptive map disappeared before its minimum width")
+    local width = api.nvim_win_get_width(map)
+    local available = select(2, minimap.span(current))
+    assert(width >= minimap.config.min_width and width < minimap.config.width)
+    assert(
+      width
+        == math.max(
+          minimap.config.min_width,
+          math.min(minimap.config.width, math.floor(available * minimap.config.max_width_ratio))
+        ),
+      "Map width does not follow the editor width limit"
+    )
+    assert(api.nvim_win_get_width(current) >= minimap.config.min_editor_width)
+    assert(pane_for(current).width == available, "Adaptive width broke the shared editor outline")
     vim.o.columns = 60
     settle()
     assert(minimap.is_enabled() and not minimap.window())

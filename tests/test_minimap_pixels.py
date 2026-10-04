@@ -1,8 +1,12 @@
 """Regressions for real glyphs, selection masks and the terminal image stream."""
 import importlib.util
+import json
 from pathlib import Path
 import re
 import unittest
+import shutil
+import subprocess
+import tempfile
 
 from PIL import Image
 
@@ -148,6 +152,44 @@ class PixelMinimapTests(unittest.TestCase):
             m.update(pixel_width=width, pixel_height=height)
             with self.assertRaises(ValueError):
                 pixels.render(m)
+
+    def test_code_tiles_are_independent_of_cursor_and_selection(self):
+        m = model()
+        m['char_width'] = 2
+        m['characters'] = [[dict(column=i, char=c, color=0xC6A0F6) for i,c in enumerate('wire address = 32;')]]
+        before = pixels.ink_tiles(m)
+        m.update(cursor=6, viewport=[1, 8], selection=dict(kind='line',first=2,last=6,start_col=0,end_col=1))
+        self.assertEqual(before, pixels.ink_tiles(m))
+        composed = Image.new('RGBA', (100, 80), pixels.rgb(m['background']) + (255,))
+        for row,tile in enumerate(before):
+            composed.alpha_composite(decode(tile), (0,row*20))
+        self.assertTrue(any(composed.getpixel((x,y))[:3] != pixels.rgb(m['background']) for y in range(10) for x in range(45)))
+        self.assertEqual(composed.getpixel((99, 35))[:3], pixels.rgb(m['background']))
+
+    @unittest.skipUnless(shutil.which('nvim'), 'Neovim is needed for Lua shadow protocol validation')
+    def test_lua_shadow_stripes_match_independent_pixel_masks(self):
+        cases = []
+        for selection in (None, dict(kind='line',first=2,last=6,start_col=0,end_col=1),
+                          dict(kind='char',first=3,last=3,start_col=2,end_col=5),
+                          dict(kind='char',first=2,last=7,start_col=4,end_col=3),
+                          dict(kind='block',first=2,last=7,start_col=2,end_col=5),
+                          dict(kind='block',first=1,last=8,start_col=100000,end_col=100003)):
+            m=model()
+            m.update(char_width=2,resolution=3)
+            if selection:m['selection']=selection
+            cases.append(m)
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'models.json'
+            path.write_text(json.dumps(cases))
+            raw=subprocess.check_output(['nvim','--clean','--headless','-l',str(ROOT/'tests/minimap_shadow_fixture.lua'),str(path)],text=True)
+        for m,tiles in zip(cases,json.loads(raw)):
+            composed=Image.new('RGBA',(100,80),pixels.rgb(m['background'])+(255,))
+            for row,tile in enumerate(tiles):
+                if tile:composed.alpha_composite(decode(tile),(0,row*20))
+            expected=pixels.render(m)
+            for y in range(80):
+                for x in range(100):
+                    self.assertTrue(all(abs(a-b)<=2 for a,b in zip(composed.getpixel((x,y))[:3],expected.getpixel((x,y)))),(m.get('selection'),x,y))
 
 
 if __name__ == '__main__':

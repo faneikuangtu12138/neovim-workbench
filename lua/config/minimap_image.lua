@@ -8,6 +8,7 @@ local options = {}
 local capable
 local frames_sent = 0
 local unsupported_warned = false
+local requests_sent, shadow_ms = 0, 0
 
 local function tty()
   for _, ui in ipairs(api.nvim_list_uis()) do
@@ -49,6 +50,8 @@ function M.status()
     painted = painted,
     frames_sent = frames_sent,
     pending = flight ~= nil or queued ~= nil,
+    code_requests = requests_sent,
+    shadow_ms = shadow_ms,
   }
 end
 
@@ -133,7 +136,8 @@ local function erase(record)
   end
 end
 
-local function send(record)
+local function send(record, dirty)
+  local started = vim.uv.hrtime()
   local win = record.win
   if
     not api.nvim_win_is_valid(win)
@@ -156,16 +160,54 @@ local function send(record)
     end
     return
   end
-  if not record.sixel then
+  local model = record.model
+  local shadows = require("config.minimap_shadows")
+  local rectangles = shadows.rectangles(model, record.rendered or model, model.char_width)
+  local moved = not vim.deep_equal(record.painted_rect, rect)
+  local sequence = {
+    "\27[?2026s\27[?2026h\27[?80s\27[?80l\27" .. "7",
+    string.format(
+      "\27[48;2;%d;%d;%dm",
+      math.floor(model.background / 65536),
+      math.floor(model.background / 256) % 256,
+      model.background % 256
+    ),
+  }
+  local count = 0
+  record.hashes = record.hashes or {}
+  for row = 1, rect.height do
+    local key, shade = shadows.tile(rectangles, row, model)
+    key = key .. ":" .. (record.ink_version or 0) .. ":" .. model.background
+    if
+      moved
+      or not record.painted
+      or record.hashes[row] ~= key
+      or dirty == true
+      or (dirty and dirty[row])
+    then
+      local position = string.format("\27[%d;%dH", rect.y + row, rect.x + 1)
+      sequence[#sequence + 1] = position .. string.format("\27[%dX", rect.width) .. shade
+      if record.tiles and record.tiles[row] then
+        sequence[#sequence + 1] = position .. record.tiles[row]
+      end
+      record.hashes[row] = key
+      count = count + 1
+    end
+  end
+  shadow_ms = (vim.uv.hrtime() - started) / 1000000
+  if count == 0 then
     return
   end
-  draw(rect, record.model.background, record.sixel)
+  sequence[#sequence + 1] = "\27" .. "8\27[?80r\27[?2026r"
+  api.nvim_ui_send(table.concat(sequence))
   frames_sent = frames_sent + 1
   record.painted = true
+  record.painted_rect = rect
 end
 
 local function dispatch(request)
   flight = request
+  requests_sent = requests_sent + 1
   vim.fn.chansend(worker, vim.json.encode({ id = request.id, model = request.model }) .. "\n")
 end
 
@@ -176,18 +218,21 @@ local function response(line)
   end
   local request = flight
   flight = nil
-  if records[request.win] == request then
+  local record = records[request.win]
+  if record and record.request_id == request.id then
     if result.error then
       stderr = result.error
     else
-      request.sixel = result.sixel
-      send(request)
+      record.tiles, record.rendered = result.tiles, request.model
+      record.ink_version = (record.ink_version or 0) + 1
+      send(record)
     end
   end
   if queued and worker then
     local next_request = queued
     queued = nil
-    if records[next_request.win] == next_request then
+    local next_record = records[next_request.win]
+    if next_record and next_record.request_id == next_request.id then
       dispatch(next_request)
     end
   end
@@ -250,22 +295,63 @@ function M.update(win, model)
   model.pixel_width = rect.width * model.cell_width
   model.pixel_height = rect.height * model.cell_height
   model.font = options.font or (root .. "/fonts/ForgeMonoGeometry6NF-Regular.ttf")
+  model.char_width = options.char_width or 2
   local previous = records[win]
-  if previous and vim.deep_equal(previous.model, model) then
-    send(previous)
+  local same = previous ~= nil
+  if same then
+    local old = previous.model
+    for _, name in ipairs({
+      "characters",
+      "offset",
+      "resolution",
+      "count",
+      "source_buf",
+      "changedtick",
+      "large",
+      "pixel_width",
+      "pixel_height",
+      "font",
+      "char_width",
+      "background",
+    }) do
+      if old[name] ~= model[name] then
+        same = false
+        break
+      end
+    end
+    same = same and vim.deep_equal(old.diagnostics, model.diagnostics)
+  end
+  local record = previous or { win = win }
+  if
+    record.rendered
+    and (
+      record.rendered.pixel_width ~= model.pixel_width
+      or record.rendered.pixel_height ~= model.pixel_height
+      or record.rendered.source_buf ~= model.source_buf
+      or record.rendered.resolution ~= model.resolution
+      or record.rendered.char_width ~= model.char_width
+    )
+  then
+    record.tiles, record.rendered, record.hashes = nil, nil, nil
+  end
+  record.model, record.rect = model, rect
+  records[win] = record
+  -- Cursor, viewport and selections repaint immediately using cached ink.
+  -- They never queue a Python request or discard an in-flight code render.
+  send(record)
+  if same then
     return
   end
   serial = serial + 1
-  local record =
-    { id = serial, win = win, rect = rect, model = model, painted = previous and previous.painted }
-  records[win] = record
+  record.request_id = serial
+  local request = { id = serial, win = win, model = model }
   if capable ~= true or not tty() or not start() then
     return
   end
   if flight then
-    queued = record
+    queued = request
   else
-    dispatch(record)
+    dispatch(request)
   end
 end
 
@@ -328,8 +414,9 @@ function M.setup(opts)
     on_win = function(_, win)
       return records[win] ~= nil
     end,
-    on_line = function(_, win)
-      dirty[win] = true
+    on_line = function(_, win, _, row)
+      dirty[win] = dirty[win] or {}
+      dirty[win][row + 1] = true
     end,
     on_end = function()
       if not repaint_pending and next(records) ~= nil and capable and tty() then
@@ -347,7 +434,7 @@ function M.setup(opts)
                 or (hidden and record.painted)
                 or (not hidden and not record.painted)
               then
-                send(record)
+                send(record, changed[win])
               end
             end
           end

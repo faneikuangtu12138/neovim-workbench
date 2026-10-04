@@ -230,7 +230,14 @@ vim.api.nvim_create_autocmd("ColorScheme", {
   end,
 })
 
-require("which-key").setup({ preset = "modern", delay = 350, win = { border = "rounded" } })
+require("which-key").setup({
+  preset = "modern",
+  delay = 350,
+  win = { border = "rounded" },
+  -- Entering Visual mode or dragging a selection must not summon a popup
+  -- over the live minimap. Explicit leader help remains available there.
+  triggers = { { "<auto>", mode = "no" }, { "<leader>", mode = "x" } },
+})
 require("which-key").add({
   { "<leader>b", group = "Buffers" },
   { "<leader>c", group = "Code" },

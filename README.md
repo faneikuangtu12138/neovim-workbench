@@ -69,7 +69,9 @@ nvim
 
 按 `<Space>e` 切换文件树焦点；`Ctrl+h/j/k/l` 在实际内容窗格之间移动。文件树中按 `a` 新建文件或目录，回车打开，详细操作见 [快捷键](docs/KEYMAPS.md)。
 
-按 `<Space>uv` 显示 / 隐藏右侧代码缩略图，也可使用 `:MinimapOpen`、`:MinimapClose`、`:MinimapToggle`。默认关闭；现在用真正的缩小字体显示代码、缩进、空行及语法颜色。当前正文视野使用浅色阴影，光标行或可视选区使用更深的阴影，没有左侧竖线或光标箭头。缩略图与正文共用圆角外框，默认 28 列、每个终端行容纳 3 行小字；长文件随编辑视野滚动，保持字号稳定。窗口太窄时暂时隐藏；欢迎页与工具窗口不生成缩略图。开关按 Neovim Tab page 独立保存，仅在当前会话生效。
+按 `<Space>uv` 显示 / 隐藏右侧代码缩略图，也可使用 `:MinimapOpen`、`:MinimapClose`、`:MinimapToggle`。默认关闭，用真正的缩小字体显示代码、缩进、空行及语法颜色。当前正文视野使用浅色阴影，光标行或可视选区使用更深的阴影，没有左侧竖线或光标箭头。缩略图与正文共用圆角外框，默认最多 **16 列**，按可用编辑区域宽度的 **14%** 收缩，最少 8 列；每个终端行容纳 3 行小字，字符横向间距为 2 个虚拟像素。长文件随编辑视野滚动，保持字号稳定。窗口太窄时暂时隐藏；欢迎页与工具窗口不生成缩略图。开关按 Neovim Tab page 独立保存，仅在当前会话生效。
+
+代码字形与交互阴影独立刷新：鼠标拖选、键盘选区、光标和视野变化走 8 ms 的交互事件合并，仅更新变化的条带，复用已生成的小字图像；代码变化才交给 Python 后台。可视模式不会自动弹出 Which-key 遮住概览，按空格仍可调用快捷键帮助。
 
 小字体通过 **Sixel 图像协议**显示，需要支持 Sixel 的终端（当前已验证 Windows Terminal 1.24；Windows Terminal 从 [1.22](https://devblogs.microsoft.com/commandline/windows-terminal-preview-1-22-release/) 起支持）及 Neovim 0.12 的 `nvim_ui_send()`。Python 3.10+ 和 Pillow 负责字体栅格化；首次使用执行 **`:MinimapSetup`**，在应用数据目录创建独立虚拟环境并安装 Pillow，启动时不自动下载。自带字体只用于图像渲染，不需要另行注册，也不改变正文的终端字体或配色。其他终端的像素格映射参见 [逐文件说明](docs/CONFIGURATION.md#luaconfigminimap_imagelua)。
 
@@ -103,7 +105,7 @@ return {
 | 行号、鼠标、搜索、默认缩进 | [core/options.lua](lua/core/options.lua) |
 | 快捷键与文件树焦点 | [core/keymaps.lua](lua/core/keymaps.lua)、[core/navigation.lua](lua/core/navigation.lua) |
 | 配色、标签、文件树、欢迎页 | [colorscheme.lua](lua/config/colorscheme.lua)、[tabs.lua](lua/config/tabs.lua)、[neotree.lua](lua/config/neotree.lua)、[dashboard.lua](lua/config/dashboard.lua) |
-| 缩略图宽度、密度、隐藏阈值和刷新频率 | [minimap.lua](lua/config/minimap.lua)、[minimap_render.lua](lua/config/minimap_render.lua)、[minimap_image.lua](lua/config/minimap_image.lua) |
+| 缩略图宽度、密度、隐藏阈值和刷新频率 | [minimap.lua](lua/config/minimap.lua)、[minimap_render.lua](lua/config/minimap_render.lua)、[minimap_image.lua](lua/config/minimap_image.lua)、[minimap_shadows.lua](lua/config/minimap_shadows.lua) |
 | 各语言缩进、格式化、保存时格式化 | [core/autocmds.lua](lua/core/autocmds.lua)、[formatting.lua](lua/config/formatting.lua) |
 | LSP、解析器、补全、模板 | [languages.lua](lua/config/languages.lua)、[treesitter.lua](lua/config/treesitter.lua)、[completion.lua](lua/config/completion.lua)、[snippets/](snippets/) |
 | Verilog/SV 检查与补全隔离 | [hdl.lua](lua/config/hdl.lua)、[语言说明](docs/LANGUAGES.md#verilog--systemverilog) |
@@ -142,7 +144,7 @@ PowerShell 中设置应用名后，运行 `nvim --headless -i NONE -S tests/smok
 
 `NVIM_APPNAME=neovim-workbench nvim --headless -i NONE -S tests/minimap_render.lua` 验证原始字形、空白和 UTF-8、TAB 停靠点、长文件滚动、真实语法颜色与注入语言、无解析器后备和主题缓存；需要已安装相应解析器。
 
-字体图像测试：使用 `:MinimapSetup` 建立的虚拟环境 Python 执行 `python -m unittest discover -s tests -p test_minimap_pixels.py`（将 `python` 换成该虚拟环境解释器路径）。覆盖真实字形、光标和三种选区阴影、裁剪、大文件及 Sixel 解码，共 10 类。解释器路径与诊断命令见 [故障排查](docs/TROUBLESHOOTING.md#缩略图空白或提示渲染器不可用)。
+字体图像测试：使用 `:MinimapSetup` 建立的虚拟环境 Python 执行 `python -m unittest discover -s tests -p test_minimap_pixels.py`（将 `python` 换成该虚拟环境解释器路径）。覆盖真实字形、光标和三种选区阴影、裁剪、大文件、独立 Sixel 解码、代码缓存与 Lua 阴影条带，共 12 类；Lua 对照用例在没有 Neovim 时明确跳过。解释器路径与诊断命令见 [故障排查](docs/TROUBLESHOOTING.md#缩略图空白或提示渲染器不可用)。
 
 发布前已在 Fedora WSL 验证首次下载 20 个插件、15 类工作流检查、41 项平台分支检查和 4 项 Python 测试；实际 Neovim 网格也验证了兼容/Geometry 模式的文件树切换、多标签和极窄窗口恢复，含插入/可视模式。平台分支模拟不等于原生 Windows/macOS 的实机验证。
 

@@ -34,7 +34,11 @@ Windows Terminal 会缓存字体集合。安装或更新字体后，保存文件
 :lua print(vim.inspect(vim.v.termresponse))
 ```
 
-`supported=true` 表示当前 TTY 宣告支持 Sixel；`worker` 表示后台在运行，`pending` 表示仍在处理图像，`error` 给出渲染错误。Linux/macOS/WSL 的独立解释器位于上述目录的 `bin/python`，原生 Windows 位于 `Scripts/python.exe`。终端重绘、关闭浮窗后会恢复图像。正文和缩略图字号独立：修改 `lines_per_row` 为 `2` 可放大缩略字形，不需要调整正文终端字体。
+`supported=true` 表示当前 TTY 宣告支持 Sixel；`worker` 表示后台在运行，`pending` 表示仍在处理代码图像，`error` 给出渲染错误。Linux/macOS/WSL 的独立解释器位于上述目录的 `bin/python`，原生 Windows 位于 `Scripts/python.exe`。终端重绘、关闭浮窗后会恢复图像。正文和缩略图字号独立：修改 `lines_per_row` 为 `2` 可放大缩略字形，`char_width` 控制横向字符间距，不需要调整正文终端字体。
+
+面板默认上限为 16 列，按编辑区域的 14% 自动收窄，最少 8 列；这些参数位于 `config.minimap` 的 `width`、`max_width_ratio` 和 `min_width`。继续收窄窗口后会暂时隐藏，为正文保留最低 48 列。增大宽度上限时，还需调整比例上限才能在常见屏幕宽度中看到变化。
+
+光标/选区/视野走 8 ms 的独立交互通道，`pending=true` 不应阻止阴影更新。同一代码片段内持续拖选时，`status().code_requests` 应保持不变；换到新的代码片段或编辑文本时才会增长。`shadow_ms` 仅是 Lua 阴影处理耗时，不包含终端传输与物理屏幕延迟。若正文和缩略图同时卡顿，应先排查 Neovim 主线程上的语言工具或其他插件。可视模式帮助仅在按 Leader 后显示，避免进入选区就自动弹窗。
 
 其他 Sixel 终端可按其虚拟像素格调整 `cell_width` / `cell_height`，默认 10×20 是 Windows Terminal 的协议映射，不是物理 DPI 尺寸。纯 GUI Neovim 或终端复用器对图像转发的支持未验证。
 

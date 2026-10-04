@@ -19,6 +19,18 @@ from PIL import Image, ImageDraw, ImageFont
 _glyph_key, _glyph_image = None, None
 
 
+@lru_cache(maxsize=2048)
+def glyph_sprite(path, size, char, advance, color):
+    font = cjk_font(size) if any(0x2e80 <= ord(c) <= 0x9fff for c in char) else None
+    font = font or font_for(path, size)
+    left, top, right, bottom = font.getbbox(char, anchor="ls")
+    mask = Image.new("RGBA", (max(1, right - left), max(1, bottom - top)))
+    ImageDraw.Draw(mask).text((-left, -top), char, font=font, fill=rgb(color), anchor="ls")
+    scale = advance / max(1, font_for(path, size).getlength('M'))
+    mask = mask.resize((max(1, round(mask.width * scale)), mask.height), Image.Resampling.BILINEAR)
+    return mask, round(left * scale), top
+
+
 def rgb(value):
     return value >> 16 & 255, value >> 8 & 255, value & 255
 
@@ -41,7 +53,7 @@ def cjk_font(size):
 
 def glyphs(model, width, height, line_height, padding, font_size, font, advance):
     global _glyph_key, _glyph_image
-    key = (width, height, line_height, padding, font_size, model.get("font", ""), model.get("characters", []))
+    key = (width, height, line_height, padding, font_size, advance, model.get("font", ""), model.get("characters", []))
     if _glyph_key == key:
         return _glyph_image
     layer = Image.new("RGBA", (width, height))
@@ -49,38 +61,18 @@ def glyphs(model, width, height, line_height, padding, font_size, font, advance)
     # A real monospace font, a shared baseline and syntax colour per glyph.
     for index, cells in enumerate(model.get("characters", [])):
         baseline = round((index + .82) * line_height)
-        run, run_color, run_column, next_column = [], None, 0, -1
-
-        def flush():
-            if run:
-                draw.text((padding + run_column * advance, baseline), ''.join(run),
-                          font=font, fill=rgb(run_color), anchor="ls")
-                run.clear()
-
         for cell in cells:
             x = padding + cell["column"] * advance
             if x >= width - padding:
                 break
-            char = cell["char"]
-            if len(char) == 1 and ord(char) < 128:
-                if cell["color"] != run_color or cell["column"] != next_column:
-                    flush()
-                    run_column, run_color = cell["column"], cell["color"]
-                run.append(char)
-                next_column = cell["column"] + 1
-            else:
-                flush()
-                fallback = cjk_font(font_size) if any(0x2e80 <= ord(c) <= 0x9fff for c in char) else None
-                draw.text((x, baseline), char, font=fallback or font,
-                          fill=rgb(cell["color"]), anchor="ls")
-                next_column = -1
-        flush()
+            sprite, left, top = glyph_sprite(model.get('font', ''), font_size, cell['char'], advance, cell['color'])
+            layer.alpha_composite(sprite, (round(x) + left, baseline + top))
     # One in-memory source slice only; cursor/selection changes reuse its ink.
     _glyph_key, _glyph_image = key, layer
     return layer
 
 
-def render(model):
+def render(model, shadows=True):
     width, height = int(model["pixel_width"]), int(model["pixel_height"])
     if not 1 <= width <= 2048 or not 1 <= height <= 4096:
         raise ValueError("Minimap canvas exceeds its bounds")
@@ -94,7 +86,7 @@ def render(model):
     padding = max(2, round(model["cell_width"] * .55))
     font_size = max(3, min(12, math.floor(model["cell_height"] / resolution) - 1))
     font = font_for(model.get("font", ""), font_size)
-    advance = max(1, font.getlength("M"))
+    advance = model.get('char_width') or max(1, font.getlength("M"))
 
     def band(first, last, color, left=0, right=width):
         top = max(0, round((first - 1 - origin) * line_height))
@@ -105,9 +97,10 @@ def render(model):
         if bottom > top and right > left:
             draw.rectangle((max(0, left), top, min(width, right) - 1, bottom - 1), fill=rgb(color))
 
-    band(model["viewport"][0], model["viewport"][1], model["view_background"])
+    if shadows:
+        band(model["viewport"][0], model["viewport"][1], model["view_background"])
     selection = model.get("selection")
-    if selection:
+    if shadows and selection:
         first = max(origin + 1, selection["first"])
         last = min(origin + math.ceil(height / line_height), selection["last"])
         for line in range(first, last + 1):
@@ -121,7 +114,7 @@ def render(model):
                 if line == selection["last"]:
                     right = math.ceil(padding + selection["end_col"] * advance)
             band(line, line, model["active_background"], left, right)
-    else:
+    elif shadows:
         band(model["cursor"], model["cursor"], model["active_background"])
 
     layer = glyphs(model, width, height, line_height, padding, font_size, font, advance)
@@ -131,6 +124,13 @@ def render(model):
         if 0 <= y < height:
             draw.ellipse((width - 5, y - 1, width - 3, y + 1), fill=rgb(item["color"]))
     return image
+
+
+def ink_tiles(model):
+    canvas = render(model, shadows=False)
+    step = model['cell_height']
+    return [sixel(canvas.crop((0, y, canvas.width, min(y + step, canvas.height))), model['background'])
+            for y in range(0, canvas.height, step)]
 
 
 def sixel(image, background=None):
@@ -187,7 +187,7 @@ def main():
             try:
                 request = json.loads(line)
                 model = request["model"]
-                response = {"id": request["id"], "sixel": sixel(render(model), model["background"])}
+                response = {"id": request["id"], "tiles": ink_tiles(model)}
             except Exception as error:
                 response = {"id": (request or {}).get("id"), "error": str(error)}
             print(json.dumps(response, ensure_ascii=True), flush=True)

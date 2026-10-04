@@ -8,7 +8,10 @@ local color_epoch = 0
 -- A native companion split reserves space instead of covering source text.
 -- It shares its owner's outer frame and is skipped by pane navigation.
 M.config = {
-  width = 28,
+  width = 16,
+  min_width = 8,
+  max_width_ratio = 0.14,
+  char_width = 2,
   min_editor_width = 48,
   min_height = 6,
   max_lines = 20000,
@@ -16,6 +19,7 @@ M.config = {
   max_columns = 120,
   lines_per_row = 3,
   refresh_ms = 80,
+  interaction_ms = 8,
 }
 
 local function valid(win)
@@ -145,9 +149,13 @@ function M.sync()
     state.source = source
   end
   local available = editor(source) and select(2, M.span(source)) or 0
+  local map_width = math.max(
+    M.config.min_width,
+    math.min(M.config.width, math.floor(available * M.config.max_width_ratio))
+  )
   local enough_room = vim.o.columns >= 24
     and vim.o.lines >= 8
-    and available >= M.config.min_editor_width + M.config.width + 1
+    and available >= M.config.min_editor_width + map_width + 1
     and api.nvim_win_get_height(source) >= M.config.min_height
   if not enough_room then
     changed = detach(state) or changed
@@ -162,7 +170,7 @@ function M.sync()
     state.win = api.nvim_open_win(buf, false, {
       split = "right",
       win = source,
-      width = M.config.width,
+      width = map_width,
       focusable = false,
       mouse = false,
       noautocmd = true,
@@ -171,8 +179,8 @@ function M.sync()
     changed = true
   end
   if valid(state.win) then
-    if api.nvim_win_get_width(state.win) ~= M.config.width then
-      api.nvim_win_set_width(state.win, M.config.width)
+    if api.nvim_win_get_width(state.win) ~= map_width then
+      api.nvim_win_set_width(state.win, map_width)
       changed = true
     end
     configure(state)
@@ -309,6 +317,7 @@ function M.paint()
     resolution = resolution,
     count = count,
     source_buf = buf,
+    changedtick = tick,
     source_win = state.source,
     large = large,
     viewport = { first, last },
@@ -319,7 +328,10 @@ function M.paint()
     view_background = background("WorkbenchMinimapView", 0x2b2e43),
     active_background = background("WorkbenchMinimapActive", 0x1b1f32),
   })
-  api.nvim_win_set_cursor(state.win, { 1, 0 })
+  local map_cursor = api.nvim_win_get_cursor(state.win)
+  if map_cursor[1] ~= 1 or map_cursor[2] ~= 0 then
+    api.nvim_win_set_cursor(state.win, { 1, 0 })
+  end
 end
 
 function M.refresh()
@@ -376,6 +388,15 @@ end
 function M.setup(opts)
   M.config = vim.tbl_extend("force", M.config, opts or {})
   assert(M.config.width >= 6 and M.config.width <= 40, "Minimap width must be 6–40 columns")
+  M.config.min_width = math.min(M.config.min_width, M.config.width)
+  assert(
+    M.config.min_width >= 6 and M.config.max_width_ratio > 0 and M.config.max_width_ratio <= 0.5,
+    "Invalid minimap width limits"
+  )
+  assert(
+    M.config.char_width >= 1 and M.config.char_width <= 8,
+    "Minimap char_width must be 1–8 pixels"
+  )
   assert(
     M.config.lines_per_row >= 2
       and M.config.lines_per_row <= 4
@@ -384,6 +405,22 @@ function M.setup(opts)
   )
   require("config.minimap_image").setup(M.config)
   local group = api.nvim_create_augroup("WorkbenchMinimap", { clear = true })
+  local interaction_pending = false
+  api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "WinScrolled", "ModeChanged" }, {
+    group = group,
+    callback = function()
+      if interaction_pending or not M.is_enabled() then
+        return
+      end
+      interaction_pending = true
+      vim.defer_fn(function()
+        interaction_pending = false
+        if vim.v.exiting == vim.NIL then
+          M.paint()
+        end
+      end, M.config.interaction_ms)
+    end,
+  })
   api.nvim_create_autocmd({
     "WinEnter",
     "BufEnter",
@@ -393,13 +430,9 @@ function M.setup(opts)
     "ColorScheme",
     "TextChanged",
     "TextChangedI",
-    "CursorMoved",
-    "CursorMovedI",
-    "WinScrolled",
     "DiagnosticChanged",
     "CmdlineLeave",
     "FileType",
-    "ModeChanged",
   }, {
     group = group,
     callback = function(event)
