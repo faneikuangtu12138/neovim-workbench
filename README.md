@@ -12,6 +12,8 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [Arch 实测适配](docs/ARCH.md) | Ghostty / Console 的字体、图像协议、验证和重装 |
+| [Arch 回归记录](docs/ARCH_VALIDATION.md) | 接缝、输入、启动服务修复与实际验证范围 |
 | [逐文件配置说明](docs/CONFIGURATION.md) | 加载顺序、每个配置文件的职责、主要参数和修改位置 |
 | [语言环境](docs/LANGUAGES.md) | LSP、格式化、缩进、项目配置和外部工具 |
 | [快捷键](docs/KEYMAPS.md) | 文件树、窗口、标签、搜索、补全、终端和构建 |
@@ -19,16 +21,22 @@
 | [字体与终端](fonts/README.md) | Geometry 6 安装、行高、Windows Terminal 配色 |
 | [第三方说明](THIRD_PARTY.md) | 字体来源、修改和图标许可证 |
 
+## Arch 与 Windows Terminal 共用配置
+
+安装对应终端字体后，可将 [local.geometry.example.lua](local.geometry.example.lua) 复制成 `local.lua`，启用圆角和 1.42 行高偏好。它在 WSL / Windows Terminal 和 Arch 中共用；绘制方式自动选择，无需维护两套 Neovim 配置。字体、终端行距与图像协议仍由终端决定，公共默认保留普通 Nerd Font 模式。
+
+Arch Ghostty 使用 Kitty 图像绘制圆角和真实字体缩略图，GNOME Console 使用修正后的 COLR 字体边框。本机 Console 不支持所需图像协议，不能显示这类缩略图。安装步骤、Ghostty 启动服务的可选兼容覆盖见 [Arch 说明](docs/ARCH.md)。
+
 ## 环境要求
 
-- **Neovim 0.12 或更新版本**。当前配置在 Fedora WSL 的 Neovim 0.12.5 验证。
+- **Neovim 0.12 或更新版本**。当前配置在 Fedora WSL 和 Arch 的 Neovim 0.12.5 验证；Arch 图像装饰使用实验性接口，升级后需重跑终端检查。
 - **Git**：首次启动会下载锁定的 20 个插件，需要能访问 GitHub。
 - **Nerd Font Mono**：在实际运行 Neovim 的终端中选择字体，用于文件图标和状态栏符号。
 - **ripgrep (`rg`)**：全文搜索；**fd** 为文件搜索的可选加速工具。
 - **Tree-sitter CLI ≥ 0.26.1、C 编译器、curl、tar**：安装语法解析器时需要；按照 CLI 官方发行或系统包管理器安装，避免通过 npm 安装。
 - 各语言服务器和格式化器按需安装，见 [语言环境](docs/LANGUAGES.md)。Python 3 还用于可选的 WSL 终端行高脚本。
 
-`nvim-treesitter` 的版本要求见 [上游说明](https://github.com/nvim-treesitter/nvim-treesitter)。Linux/macOS/原生 Windows 的配置路径均使用 `stdpath`；目前实际验证的平台为 Fedora WSL，其他平台的终端与外部工具需按文档配置。
+`nvim-treesitter` 的版本要求见 [上游说明](https://github.com/nvim-treesitter/nvim-treesitter)。Linux/macOS/原生 Windows 的配置路径均使用 `stdpath`；实际验证的平台为 Fedora WSL 和 Arch，其他平台的终端与外部工具需按文档配置。
 
 ## 下载与试用
 
@@ -73,7 +81,7 @@ nvim
 
 代码字形与交互阴影独立刷新：鼠标拖选、键盘选区、光标和视野变化走 8 ms 的交互事件合并，仅更新变化的条带，复用已生成的小字图像；代码变化才交给 Python 后台。可视模式不会自动弹出 Which-key 遮住概览，按空格仍可调用快捷键帮助。
 
-小字体通过 **Sixel 图像协议**显示，需要支持 Sixel 的终端（当前已验证 Windows Terminal 1.24；Windows Terminal 从 [1.22](https://devblogs.microsoft.com/commandline/windows-terminal-preview-1-22-release/) 起支持）及 Neovim 0.12 的 `nvim_ui_send()`。Python 3.10+ 和 Pillow 负责字体栅格化；首次使用执行 **`:MinimapSetup`**，在应用数据目录创建独立虚拟环境并安装 Pillow，启动时不自动下载。自带字体只用于图像渲染，不需要另行注册，也不改变正文的终端字体或配色。其他终端的像素格映射参见 [逐文件说明](docs/CONFIGURATION.md#luaconfigminimap_imagelua)。
+小字体通过 **Kitty 或 Sixel 图像协议**显示；Ghostty 在 Arch 使用 Kitty 并实测字符格尺寸，Windows Terminal 保留 Sixel 后端。本机 GNOME Console 未提供相应图像能力，不能显示真实小字体缩略图。Python 3.10+ 和 Pillow 负责字体栅格化；缺少 Pillow 时执行 **`:MinimapSetup`**，在应用数据目录创建独立虚拟环境并安装 Pillow，启动时不自动下载。Arch 的圆角图像装饰另需系统 pycairo，安装和字体选择见 [Arch 说明](docs/ARCH.md)。
 
 ![小字体代码缩略图](assets/minimap.png)
 
@@ -149,3 +157,5 @@ PowerShell 中设置应用名后，运行 `nvim --headless -i NONE -S tests/smok
 发布前已在 Fedora WSL 验证首次下载 20 个插件、15 类工作流检查、41 项平台分支检查和 4 项 Python 测试；实际 Neovim 网格也验证了兼容/Geometry 模式的文件树切换、多标签和极窄窗口恢复，含插入/可视模式。平台分支模拟不等于原生 Windows/macOS 的实机验证。
 
 仓库只包含配置、模板、公开示例图与可选字体，不包含插件副本、个人编辑记录、工程源文件、终端完整设置或认证数据。附带字体与图标的授权、来源和修改记录见 [第三方说明](THIRD_PARTY.md)。
+
+Arch 追加验证：真实 Ghostty / Console 各完成 12 轮标签鼠标与模式往返，隔离 GTK 按键各完成 6 轮，Ghostty D-Bus 冷启动 10 次通过。具体环境和边界见 [Arch 回归记录](docs/ARCH_VALIDATION.md)。

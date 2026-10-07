@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw tiny font glyphs and encode the canvas with the Sixel protocol.
+"""Draw tiny font glyphs for Kitty PNG tiles or a Sixel canvas.
 
 Worker input/output is newline-delimited JSON. Only Neovim sends graphics to the
 terminal, after checking that the response and destination are still current.
@@ -7,6 +7,8 @@ terminal, after checking that the response and destination are still current.
 from __future__ import annotations
 
 import argparse
+import base64
+import io
 from functools import lru_cache
 import json
 import math
@@ -53,7 +55,7 @@ def cjk_font(size):
 
 def glyphs(model, width, height, line_height, padding, font_size, font, advance):
     global _glyph_key, _glyph_image
-    key = (width, height, line_height, padding, font_size, advance, model.get("font", ""), model.get("characters", []))
+    key = (width, height, line_height, padding, font_size, advance, model.get("font", ""), tuple(tuple((cell["column"], cell["char"], cell["color"]) for cell in row) for row in model.get("characters", [])))
     if _glyph_key == key:
         return _glyph_image
     layer = Image.new("RGBA", (width, height))
@@ -72,11 +74,12 @@ def glyphs(model, width, height, line_height, padding, font_size, font, advance)
     return layer
 
 
-def render(model, shadows=True):
+def render(model, shadows=True, transparent=False):
     width, height = int(model["pixel_width"]), int(model["pixel_height"])
     if not 1 <= width <= 2048 or not 1 <= height <= 4096:
         raise ValueError("Minimap canvas exceeds its bounds")
-    image = Image.new("RGB", (width, height), rgb(model["background"]))
+    image = Image.new("RGBA" if transparent else "RGB", (width, height),
+                      (0, 0, 0, 0) if transparent else rgb(model["background"]))
     draw = ImageDraw.Draw(image)
     resolution = model["resolution"]
     line_height = model["cell_height"] / resolution
@@ -84,7 +87,7 @@ def render(model, shadows=True):
     if model.get("large"):
         line_height, origin = height / max(1, model["count"]), 0
     padding = max(2, round(model["cell_width"] * .55))
-    font_size = max(3, min(12, math.floor(model["cell_height"] / resolution) - 1))
+    font_size = max(3, min(max(12, round(12 * model["cell_width"] / 10)), math.floor(model["cell_height"] / resolution) - 1))
     font = font_for(model.get("font", ""), font_size)
     advance = model.get('char_width') or max(1, font.getlength("M"))
 
@@ -118,7 +121,10 @@ def render(model, shadows=True):
         band(model["cursor"], model["cursor"], model["active_background"])
 
     layer = glyphs(model, width, height, line_height, padding, font_size, font, advance)
-    image.paste(layer, (0, 0), layer)
+    if transparent:
+        image.alpha_composite(layer)
+    else:
+        image.paste(layer, (0, 0), layer)
     for item in model.get("diagnostics", []):
         y = int((item["line"] - 1 - origin + .5) * line_height)
         if 0 <= y < height:
@@ -127,6 +133,14 @@ def render(model, shadows=True):
 
 
 def ink_tiles(model):
+    if model.get("protocol") == "kitty":
+        canvas = render(model, shadows=False, transparent=True)
+        result = []
+        for y in range(0, canvas.height, model["cell_height"]):
+            output = io.BytesIO()
+            canvas.crop((0, y, canvas.width, min(y + model["cell_height"], canvas.height))).save(output, format="PNG")
+            result.append(base64.b64encode(output.getvalue()).decode("ascii"))
+        return result
     canvas = render(model, shadows=False)
     step = model['cell_height']
     return [sixel(canvas.crop((0, y, canvas.width, min(y + step, canvas.height))), model['background'])

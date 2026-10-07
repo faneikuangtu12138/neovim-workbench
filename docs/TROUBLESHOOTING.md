@@ -1,6 +1,6 @@
 # 故障排查与平台边界
 
-本配置在 Fedora WSL + Windows Terminal 上完成实际编辑和 UI 检查。Linux、macOS、原生 Windows 的路径和 shell 分支作了兼容处理；这不代表每个平台、字体和外部工具都已经完成实际工程验证。
+本配置在 Fedora WSL + Windows Terminal 和 Arch + Ghostty / GNOME Console 上完成实际编辑和 UI 检查。Linux、macOS、原生 Windows 的路径和 shell 分支作了兼容处理；这不代表每个平台、字体和外部工具都已经完成实际工程验证。
 
 ## 首次启动失败或插件不存在
 
@@ -14,7 +14,7 @@
 
 公共默认使用标准 Nerd Font UI。终端应选择 **Nerd Font Mono**；普通等宽字体可能缺少文件图标和 Powerline 符号。Neovim 无法可靠检测终端实际使用的字体。
 
-只有安装 ForgeMono Geometry 6 NF 的四种样式，并匹配终端字符格高度后，才在 `local.lua` 设置 `round_tabs = true`。专用几何字形的像素效果主要在 Windows Terminal 中验证；其他终端建议先保持兼容模式。
+只有安装 ForgeMono Geometry 6 NF 的四种样式，并匹配终端字符格高度后，才在 `local.lua` 设置 `round_tabs = true`。Arch Ghostty / Console 使用各自的衍生字体和自动选择的绘制方式，见 [Arch 适配](ARCH.md)。未验证的终端建议先保持兼容模式。
 
 `line_height` 仅设置几何字形的启动默认值，不改变终端行高。已有 `:UiLineHeight` 缓存优先，避免重启时覆盖刚设置的行高。自定义 `terminal_ui.state` 同时决定缓存的写入和读取路径。
 
@@ -22,9 +22,9 @@ Windows Terminal 会缓存字体集合。安装或更新字体后，保存文件
 
 ## 缩略图空白或提示渲染器不可用
 
-小字体图像需要 Sixel 终端及 Neovim 0.12，当前已验证 Windows Terminal 1.24。不支持图像的终端无法显示本实现的小字体；它没有自动退回方块轮廓。默认关闭，使用 `空格 u v` 开启。窗口过窄、欢迎页或工具缓冲区时会等待合适的正文窗格。
+小字体图像需要 Kitty 或 Sixel 终端及 Neovim 0.12，当前已验证 Arch Ghostty 1.3.1 和 Windows Terminal 1.24。本机 GNOME Console / VTE 0.84.1 没有相应图像协议。不支持图像的终端无法显示本实现的小字体；它没有自动退回方块轮廓。默认关闭，使用 `空格 u v` 开启。窗口过窄、欢迎页或工具缓冲区时会等待合适的正文窗格。
 
-首次执行 `:MinimapSetup`，需要 Python 3.10+、venv 模块、pip 和网络；它把 Pillow 装入 `stdpath('data')/workbench-minimap-env`，不改系统环境。WSL 安装发生在 Linux 内，Windows 的 Python 包不能替代 Linux 包。命令只在主动执行时下载；已有自己的 Pillow 环境可在 `config.minimap.setup(opts)` 中指定 `python`。终端明确报告不支持 Sixel 时只提示一次，不创建空白窗格。
+首次执行 `:MinimapSetup`，需要 Python 3.10+、venv 模块、pip 和网络；它把 Pillow 装入 `stdpath('data')/workbench-minimap-env`，不改系统环境。WSL 安装发生在 Linux 内，Windows 的 Python 包不能替代 Linux 包。命令只在主动执行时下载；已有自己的 Pillow 环境可在 `config.minimap.setup(opts)` 中指定 `python`。终端能力探测未发现 Kitty / Sixel 时只提示一次，不保留空白窗格。
 
 排查命令：
 
@@ -34,13 +34,13 @@ Windows Terminal 会缓存字体集合。安装或更新字体后，保存文件
 :lua print(vim.inspect(vim.v.termresponse))
 ```
 
-`supported=true` 表示当前 TTY 宣告支持 Sixel；`worker` 表示后台在运行，`pending` 表示仍在处理代码图像，`error` 给出渲染错误。Linux/macOS/WSL 的独立解释器位于上述目录的 `bin/python`，原生 Windows 位于 `Scripts/python.exe`。终端重绘、关闭浮窗后会恢复图像。正文和缩略图字号独立：修改 `lines_per_row` 为 `2` 可放大缩略字形，`char_width` 控制横向字符间距，不需要调整正文终端字体。
+`supported=true` 表示当前 TTY 通过所选图像协议的能力探测；`protocol` 标明 `kitty` 或 `sixel`，`:MinimapStatus` 还显示实测像素格；`worker` 表示后台在运行，`pending` 表示仍在处理代码图像，`error` 给出渲染错误。Linux/macOS/WSL 的独立解释器位于上述目录的 `bin/python`，原生 Windows 位于 `Scripts/python.exe`。终端重绘、关闭浮窗后会恢复图像。正文和缩略图字号独立：修改 `lines_per_row` 为 `2` 可放大缩略字形，`char_width` 控制横向字符间距，不需要调整正文终端字体。
 
 面板默认上限为 16 列，按编辑区域的 14% 自动收窄，最少 8 列；这些参数位于 `config.minimap` 的 `width`、`max_width_ratio` 和 `min_width`。继续收窄窗口后会暂时隐藏，为正文保留最低 48 列。增大宽度上限时，还需调整比例上限才能在常见屏幕宽度中看到变化。
 
 光标/选区/视野走 8 ms 的独立交互通道，`pending=true` 不应阻止阴影更新。同一代码片段内持续拖选时，`status().code_requests` 应保持不变；换到新的代码片段或编辑文本时才会增长。`shadow_ms` 仅是 Lua 阴影处理耗时，不包含终端传输与物理屏幕延迟。若正文和缩略图同时卡顿，应先排查 Neovim 主线程上的语言工具或其他插件。可视模式帮助仅在按 Leader 后显示，避免进入选区就自动弹窗。
 
-其他 Sixel 终端可按其虚拟像素格调整 `cell_width` / `cell_height`，默认 10×20 是 Windows Terminal 的协议映射，不是物理 DPI 尺寸。纯 GUI Neovim 或终端复用器对图像转发的支持未验证。
+Ghostty Kitty 后端使用实测物理字符格；不要为它套用 Windows 的 10×20 虚拟格。其他 Sixel 终端可按其虚拟像素格调整 `cell_width` / `cell_height`，默认 10×20 是 Windows Terminal 的协议映射，不是物理 DPI 尺寸。纯 GUI Neovim 或终端复用器对图像转发的支持未验证。
 
 ## `:UiLineHeight` 提示手动设置或找不到 profile
 
@@ -96,3 +96,11 @@ vim.opt.shellcmdflag = "-NoLogo -NoProfile -Command"
 少于 24 列或 8 行时会进入紧凑模式，收起部分装饰。终端保留的快捷键可能拦截 `Ctrl+h/l` 或 `Ctrl+方向键`；检查终端按键绑定后，可使用 `空格 e` 或原生 `Ctrl+w` 导航。
 
 系统剪贴板可用 `"+y` / `"+p`。WSL 检测到 win32yank.exe 后会自动集成；其他系统使用各自的 Neovim clipboard provider，并可按需要在个人配置设置 `vim.opt.clipboard = "unnamedplus"`。Linux Wayland/X11 可能需要安装 wl-clipboard/xclip。
+
+## NORMAL 时 Esc 没有命令弹窗
+
+NORMAL 已经是普通模式。Esc 清除搜索高亮；输入 Ex 命令请按 `:`，进入命令行并显示 Noice 弹窗。INSERT / VISUAL 中 Esc 退出该模式，命令行中 Esc 取消输入。此行为通过实际终端和 GTK 按键检查，详见 [回归记录](ARCH_VALIDATION.md)。
+
+## Ghostty 从 GNOME 概览要点击多次
+
+先检查 `journalctl --user -u app-com.mitchellh.ghostty.service`。如果出现 `lacks handler for reload signal USR2` 和 `protocol`，与本机 Ghostty 1.3.1 / systemd 262 启动拒绝一致。用户级 `Type=notify` 覆盖保留 D-Bus 激活，但暂不支持 `systemctl reload`；使用应用内 Reload Configuration。安装和回退见 [Arch 说明](ARCH.md#ghostty-从-gnome-概览启动)。

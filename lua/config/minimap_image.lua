@@ -1,11 +1,13 @@
--- Sixel transport. Rendering is asynchronous; stale frames never reach the TTY.
+-- Kitty/Sixel transport. Rendering is asynchronous; stale frames never reach the TTY.
 local M = {}
 local api = vim.api
 local root = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2))))
 local records, serial, worker, flight, queued = {}, 0, nil, nil, nil
 local output, stderr, warned, repaint_pending = "", "", false, false
 local options = {}
-local capable
+local capable, protocol, probing
+local kitty = require("config.minimap_kitty")
+local probe_id = 3000000000 + vim.fn.getpid()
 local frames_sent = 0
 local unsupported_warned = false
 local requests_sent, shadow_ms = 0, 0
@@ -20,13 +22,24 @@ local function tty()
 end
 
 local function attributes(sequence)
-  if type(sequence) ~= "string" or not sequence:match("^\27%[%?[%d;]+c$") then
+  if type(sequence) ~= "string" then
     return
   end
-  capable = false
-  for value in sequence:gmatch("%d+") do
-    capable = capable or value == "4"
+  if sequence:match("^\27_Gi=" .. probe_id .. ";OK") then
+    protocol, capable = "kitty", true
+    return
   end
+  if not sequence:match("^\27%[%?[%d;]+c$") then
+    return
+  end
+  local sixel = false
+  for value in sequence:gmatch("%d+") do
+    sixel = sixel or value == "4"
+  end
+  if sixel and protocol ~= "kitty" then
+    protocol, capable = "sixel", true
+  end
+  -- DA1 cannot rule out Kitty: wait for the independent graphics query.
 end
 
 local function python()
@@ -45,6 +58,8 @@ function M.status()
   end
   return {
     supported = capable == true and tty(),
+    protocol = protocol,
+    probing = probing == true,
     worker = worker,
     error = stderr,
     painted = painted,
@@ -115,6 +130,13 @@ local function draw(rect, color, sixel)
 end
 
 local function erase(record)
+  if record and protocol == "kitty" then
+    local sequence = kitty.hide(record, true)
+    if tty() and sequence ~= "" then
+      api.nvim_ui_send(sequence)
+    end
+    return
+  end
   if not record or not record.painted then
     return
   end
@@ -154,6 +176,9 @@ local function send(record, dirty)
   end
   if obscured(rect) then
     if record.painted then
+      if protocol == "kitty" then
+        api.nvim_ui_send(kitty.hide(record, false))
+      end
       record.painted = false
       -- Let Neovim redraw both the blank panel and the overlapping float.
       vim.cmd("redraw!")
@@ -163,6 +188,16 @@ local function send(record, dirty)
   local model = record.model
   local shadows = require("config.minimap_shadows")
   local rectangles = shadows.rectangles(model, record.rendered or model, model.char_width)
+  if protocol == "kitty" then
+    local sequence, count = kitty.paint(record, rect, rectangles, dirty)
+    shadow_ms = (vim.uv.hrtime() - started) / 1000000
+    if count > 0 or sequence ~= "" then
+      api.nvim_ui_send("\27[?2026h\27" .. "7" .. sequence .. "\27" .. "8\27[?2026l")
+      frames_sent = frames_sent + 1
+      record.painted, record.painted_rect = true, rect
+    end
+    return
+  end
   local moved = not vim.deep_equal(record.painted_rect, rect)
   local sequence = {
     "\27[?2026s\27[?2026h\27[?80s\27[?80l\27" .. "7",
@@ -291,16 +326,24 @@ function M.update(win, model)
   end
   -- Windows Terminal uses virtual Sixel cells of 10x20 pixels, independently
   -- of physical DPI, font face and line height (Microsoft SixelParser).
-  model.cell_width, model.cell_height = options.cell_width or 10, options.cell_height or 20
+  local width, height = kitty.cell_size()
+  if vim.env.WT_SESSION and protocol == "sixel" then
+    width, height = 10, 20
+  end
+  model.cell_width, model.cell_height =
+    options.cell_width or width or 10, options.cell_height or height or 20
+  model.protocol = protocol
+
   model.pixel_width = rect.width * model.cell_width
   model.pixel_height = rect.height * model.cell_height
   model.font = options.font or (root .. "/fonts/ForgeMonoGeometry6NF-Regular.ttf")
-  model.char_width = options.char_width or 2
+  model.char_width = (options.char_width or 2) * model.cell_width / 10
   local previous = records[win]
   local same = previous ~= nil
   if same then
     local old = previous.model
     for _, name in ipairs({
+      "protocol",
       "characters",
       "offset",
       "resolution",
@@ -325,13 +368,15 @@ function M.update(win, model)
   if
     record.rendered
     and (
-      record.rendered.pixel_width ~= model.pixel_width
+      record.rendered.protocol ~= model.protocol
+      or record.rendered.pixel_width ~= model.pixel_width
       or record.rendered.pixel_height ~= model.pixel_height
       or record.rendered.source_buf ~= model.source_buf
       or record.rendered.resolution ~= model.resolution
       or record.rendered.char_width ~= model.char_width
     )
   then
+    erase(record)
     record.tiles, record.rendered, record.hashes = nil, nil, nil
   end
   record.model, record.rect = model, rect
@@ -389,11 +434,6 @@ function M.setup(opts)
         vim.schedule(function()
           require("config.minimap").refresh()
         end)
-      elseif capable == false and tty() and require("config.minimap").is_enabled() then
-        vim.schedule(function()
-          M.query()
-          require("config.minimap").close()
-        end)
       end
     end,
   })
@@ -403,6 +443,9 @@ function M.setup(opts)
       if event.event == "WinClosed" then
         M.clear(tonumber(event.match))
       else
+        for _, record in pairs(records) do
+          erase(record)
+        end
         records = {}
         M.clear(0)
       end
@@ -442,6 +485,12 @@ function M.setup(opts)
       end
     end,
   })
+  api.nvim_create_user_command("MinimapStatus", function()
+    local status = M.status()
+    local width, height = kitty.cell_size()
+    status.cell_pixels = { width, height }
+    vim.notify(vim.inspect(status), vim.log.levels.INFO, { title = "Workbench minimap" })
+  end, { desc = "Show minimap protocol, pixel size and rendering status" })
   api.nvim_create_user_command("MinimapSetup", function()
     local base = vim.fn.stdpath("data") .. "/workbench-minimap-env"
     local interpreter = vim.fn.has("win32") == 1 and "python" or "python3"
@@ -458,6 +507,9 @@ function M.setup(opts)
         vim.schedule(function()
           warned = false
           if installed.code == 0 then
+            for _, record in pairs(records) do
+              erase(record)
+            end
             records = {}
             M.clear(0)
             require("config.minimap").refresh()
@@ -472,18 +524,37 @@ function M.setup(opts)
 end
 
 function M.query()
-  if tty() and capable == false then
+  if not tty() then
+    return true
+  end
+  if capable == false then
     if not unsupported_warned then
       unsupported_warned = true
       vim.notify(
-        "Small-font minimap needs a Sixel terminal (Windows Terminal 1.22+)",
+        "This terminal provides neither Kitty graphics nor Sixel. Use Ghostty for the small-font minimap.",
         vim.log.levels.WARN
       )
     end
     return false
   end
-  if tty() and capable == nil then
-    api.nvim_ui_send("\27[c")
+  if not probing and not protocol then
+    probing = true
+    api.nvim_ui_send(string.format("\27_Gi=%d,s=1,v=1,a=q,t=d,f=24;AAAA\27\\\27[c", probe_id))
+    vim.defer_fn(function()
+      probing = false
+      if vim.v.exiting ~= vim.NIL then
+        return
+      end
+      if not protocol then
+        capable = false
+        if require("config.minimap").is_enabled() then
+          M.query()
+          require("config.minimap").close()
+        end
+      else
+        require("config.minimap").refresh()
+      end
+    end, 700)
   end
   return true
 end

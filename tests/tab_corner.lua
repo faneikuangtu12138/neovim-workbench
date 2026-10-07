@@ -92,6 +92,17 @@ local ok, failure = xpcall(function()
   check("restored viewport / second selected", false, false)
   api.nvim_set_current_buf(first)
   check("switch back to first selected", true, false)
+  local settings = require("core.settings").get()
+  local original_geometry = settings.geometry_images
+  settings.geometry_images = true
+  vim.cmd.edit(vim.fn.fnameescape(temporary .. "/second_中文.sv"))
+  local text = api.nvim_eval_statusline(tabs.header(editor), { winid = editor, maxwidth = 160 }).str
+  assert(
+    text:find("中文", 1, true),
+    "Wide tab text must remain native and unmarked in image mode"
+  )
+  settings.geometry_images = original_geometry
+  passed[#passed + 1] = "Chinese tab text remains native in image mode"
 end, debug.traceback)
 
 vim.fn.delete(temporary, "rf")

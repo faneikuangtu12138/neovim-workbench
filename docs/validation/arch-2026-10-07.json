@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-07",
+  "environment": {
+    "os": "Arch Linux",
+    "nvim": "0.12.5",
+    "ghostty": "1.3.1-arch2",
+    "vte": "0.84.1",
+    "systemd": "262"
+  },
+  "native_terminal_checks": {
+    "ghostty": 8,
+    "console": 4,
+    "scope": "Neovim input API in real terminal windows; 12 mouse and mode cycles per terminal"
+  },
+  "gtk_x11_keys": {
+    "ghostty_cycles": 6,
+    "console_cycles": 6,
+    "scope": "XTest through actual GTK terminal; simple input method; not Chinese composition"
+  },
+  "dbus_cold_activation": {
+    "passed": 10,
+    "scope": "One D-Bus Activate per isolated cold start; same activation chain as GNOME launcher; no desktop mouse automation"
+  },
+  "headless": {
+    "smoke": 15,
+    "minimap": 10,
+    "tab_corner": 8,
+    "minimap_render": 11,
+    "portability": 41,
+    "terminal_settings": 7
+  },
+  "pixels": {
+    "minimap_and_geometry": 16,
+    "kitty": 2
+  },
+  "font_integrity": {
+    "styles": 4,
+    "seams_changed_per_style": 144,
+    "ordinary_outlines_advances_color_layers_palette_cmap_unchanged": true
+  },
+  "ghostty_cell_pixels": [
+    23,
+    54
+  ],
+  "lock_unchanged": true,
+  "limits": [
+    "Console lacks Kitty/Sixel; no real-font minimap",
+    "No Windows/macOS现场 rerun",
+    "No user HDL synthesis/simulation/LSP acceptance",
+    "Experimental nvim__inspect_cell must be retested after upgrades"
+  ],
+  "publication_checkout": {
+    "headless_rerun": true,
+    "python_tests": 22,
+    "format_and_diff_checks": true
+  }
+}

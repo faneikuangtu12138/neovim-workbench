@@ -22,6 +22,7 @@
 8. `config.frame.setup()`：启用原生窗格轮廓，同时启用 `config.footer`、`config.resize`。
 9. `config.minimap.setup()`：注册代码缩略图命令与刷新事件，默认不开窗。
 10. `config.dashboard` → `core.keymaps`：欢迎页和最终通用按键。
+11. `config.geometry_image.setup()`：按自动适配结果启用 Ghostty 图像装饰。
 
 这些模块还会在事件回调中互相调用。核心关系为：
 
@@ -40,7 +41,7 @@ flowchart TD
   Frame --> Footer[config.footer]
   Frame --> Minimap[config.minimap]
   Minimap --> Glyphs[config.minimap_render / source glyphs and colours]
-  Minimap --> Image[config.minimap_image / asynchronous Sixel]
+  Minimap --> Image[config.minimap_image / Kitty or Sixel]
   Image --> Pixels[scripts/minimap-render.py / real small fonts]
   Image --> Shadows[config.minimap_shadows / immediate selection stripes]
   Footer --> Capsules[config.footer_capsules]
@@ -57,6 +58,7 @@ flowchart TD
 | 字段 | 默认值 | 用途与修改方式 |
 | --- | --- | --- |
 | `round_tabs` | `false` | 普通 Nerd Font Mono 模式。安装四个 Geometry 6 字体、匹配终端行高后，设为 `true` 使用专用字形。修改后重启 Neovim。 |
+| `geometry_images` | `"auto"` | Linux Ghostty 且启用 round_tabs 时使用图像装饰；其他终端保持字形。诊断时可用布尔值覆盖。 |
 | `line_height` | `nil` | 字形银行的启动默认值，范围 `1.42–1.65`、步长 `0.01`。已有行高缓存优先；该字段本身不修改终端字体或行高。 |
 | `terminal_ui.enabled` | `true` | 是否启用 Windows Terminal 后台集成；关闭后命令仅同步本地几何，不修改终端。 |
 | `terminal_ui.profile` | `"Fedora"` | 你实际使用的 Windows Terminal profile 名称，可改为其他 WSL profile。 |
@@ -68,7 +70,7 @@ flowchart TD
 
 ### [lua/core/settings.lua](../lua/core/settings.lua)
 
-读取 `local.lua`，将其与 `defaults` 深度合并，并验证 `round_tabs`、`line_height` 和 `terminal_ui` 的基本类型。`setup()` 把字体模式、默认高度和缓存位置传给 `vim.g.workbench_round_tabs`、`vim.g.workbench_line_height`、`vim.g.workbench_ui_state`；其他模块通过 `get()` 读取设置。
+读取 `local.lua`，将其与 `defaults` 深度合并，并验证 `round_tabs`、`geometry_images`、`line_height` 和 `terminal_ui` 的基本类型。`setup()` 把字体模式、默认高度和缓存位置传给 `vim.g.workbench_round_tabs`、`vim.g.workbench_line_height`、`vim.g.workbench_ui_state`；其他模块通过 `get()` 读取设置。
 
 新增公开参数时，应在这里添加默认值或校验、在 `local.example.lua` 增加示例，再在使用该参数的模块中读取。此模块在基础选项之前运行；在 `local.lua` 中提前改 `vim.opt`，可能被之后的模块覆盖。
 
@@ -362,7 +364,7 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 ### [lua/config/minimap_image.lua](../lua/config/minimap_image.lua)
 
-终端图像传输与异步工作进程。读取终端 DA1 响应中的 Sixel 能力位，仅向 `stdout_tty` 的 UI 通过 Neovim 0.12 `nvim_ui_send()` 输出图像。没有外部缩略图插件，不加载 LazyVim。图像严格放在缩略图正文矩形内，保留标签、圆角外框和底栏；每次仅擦除该空白区域，透明背景保持准确的主题底色。保存并恢复终端光标及显示模式，图像输出不会移动正文光标。
+终端图像传输与异步工作进程。分别探测 Kitty 图像响应及终端 DA1 中的 Sixel 能力位，仅向 `stdout_tty` 的 UI 通过 Neovim 0.12 `nvim_ui_send()` 输出图像。没有外部缩略图插件，不加载 LazyVim。图像严格放在缩略图正文矩形内，保留标签、圆角外框和底栏；每次仅擦除该空白区域，透明背景保持准确的主题底色。保存并恢复终端光标及显示模式，图像输出不会移动正文光标。
 
 代码层和交互层分开。Python 只生成透明的小字与诊断条带；Lua 在最新模型上计算阴影，擦除变化的条带后叠加阴影与缓存字形。光标/选区/视野不属于代码请求键，不会排队等待 Python，也不会使正在生成的代码响应失效。待新片段生成期间，阴影按实际显示的旧片段坐标计算；新代码返回后立即使用最新选区。
 
@@ -372,7 +374,7 @@ Neovim 包管理器的生成锁文件，记录每个插件的 `src`、确切 `re
 
 关闭时显式擦除当前缩略图矩形，即使新帧仍在后台渲染也保留旧图像的清理状态。`TabLeave` 擦除离开的图像，返回时重绘；窗口已失效时重新绘制原生布局，避免按过期坐标擦掉别的编辑区。
 
-Windows Terminal 的 [SixelParser](https://github.com/microsoft/terminal/blob/main/src/terminal/adapter/SixelParser.cpp) 默认使用 **10×20 虚拟像素格**，随真实终端字号、行高及 DPI 缩放，无需读取物理像素或修改终端字体。`setup(opts)` 中 `cell_width` / `cell_height` 可按其他 Sixel 终端的映射设置；不要把 Windows Terminal 的物理 DPI 尺寸填入这里。其他终端尚未做实机验证。
+Windows Terminal 的 [SixelParser](https://github.com/microsoft/terminal/blob/main/src/terminal/adapter/SixelParser.cpp) 默认使用 **10×20 虚拟像素格**，随真实终端字号、行高及 DPI 缩放，无需读取物理像素或修改终端字体。`setup(opts)` 中 `cell_width` / `cell_height` 可按其他 Sixel 终端的映射设置；不要把 Windows Terminal 的物理 DPI 尺寸填入这里。Arch Ghostty 的 Kitty 后端使用 ioctl 实测的物理字符格；不会读取终端输入。GNOME Console 未提供所需图像协议；其他终端未做实机验证。
 
 可选参数 `python` 为单个解释器路径，`font` 为可访问的 TrueType/OpenType 字体路径；默认读取仓库的 `fonts/ForgeMonoGeometry6NF-Regular.ttf`。默认优先使用 `stdpath('data')/workbench-minimap-env` 虚拟环境，缺少时尝试 `python3`。`:MinimapSetup` 主动创建虚拟环境并安装 `Pillow>=12,<13`，不修改系统 Python，也不在启动时下载。`status()` 返回终端能力、后台、错误、在途请求和已输出帧数；`code_requests` 是字体请求数，`shadow_ms` 是本次 Lua 阴影处理时间，均不是实际显示器延迟。
 
@@ -382,7 +384,7 @@ Windows Terminal 的 [SixelParser](https://github.com/microsoft/terminal/blob/ma
 
 ### [scripts/minimap-render.py](../scripts/minimap-render.py)
 
-独立 Pillow 字体栅格化和 Sixel 编码器。通过逐行 JSON 的 stdin/stdout 接收代码模型，后台仅输出透明的小字/诊断条带；脚本自身不接触终端、配置文件或用户工程。字体使用共享基线，按 `char_width` 缩放横向字形；中文在存在系统 CJK 字体时补齐。最多缓存 2,048 个字形/颜色组合和当前一个代码片段的字形层，移动片段时重用字形贴图。后台不生成视野/选区阴影；`render()` 的完整阴影版本保留给独立测试和显式预览。
+独立 Pillow 字体栅格化、Sixel 编码器与 Kitty PNG 条带输出。通过逐行 JSON 的 stdin/stdout 接收代码模型，后台仅输出透明的小字/诊断条带；脚本自身不接触终端、配置文件或用户工程。字体使用共享基线，按 `char_width` 缩放横向字形；中文在存在系统 CJK 字体时补齐。最多缓存 2,048 个字形/颜色组合和当前一个代码片段的字形层，移动片段时重用字形贴图。后台不生成视野/选区阴影；`render()` 的完整阴影版本保留给独立测试和显式预览。
 
 Sixel 编码只量化抗锯齿颜色，不用方块或 Braille 字符代替文字。背景透明，限制画布尺寸，裁剪范围之外的选区；数据只驻留内存和进程管道，不写出代码图像缓存。可用 `--png` 对显式提供的 JSON 模型生成测试预览。
 
@@ -402,7 +404,7 @@ Sixel 编码只量化抗锯齿颜色，不用方块或 Braille 字符代替文�
 
 ### [tests/tab_corner.lua](../tests/tab_corner.lua)
 
-加载完整配置，检查实际标签行文本、原生边框缓冲区和正文起始行。覆盖第一个/第二个标签选中、编辑区/文件树焦点、窄窗口裁剪、恢复窗口和切回首标签，共 7 类检查。第二个标签选中时，第一个标签左边界内缩一列，与正文圆角的顶部端点连接；文字起始位置和正文高度不变。第一个可见标签选中时，标签承担外围圆角，正文侧边连续向下。
+加载完整配置，检查实际标签行文本、原生边框缓冲区和正文起始行。覆盖第一个/第二个标签选中、编辑区/文件树焦点、窄窗口裁剪、恢复窗口和切回首标签，共 8 类检查（含图像模式中文标签不附加专用组合标记）。第二个标签选中时，第一个标签左边界内缩一列，与正文圆角的顶部端点连接；文字起始位置和正文高度不变。第一个可见标签选中时，标签承担外围圆角，正文侧边连续向下。
 
 使用当前配置执行 `nvim --headless -i NONE -S tests/tab_corner.lua`；独立应用名安装需先按 README 设置应用名。这个测试验证结构和状态切换，像素连接还需用实际终端或原生字形栅格检查；本次另外检查了 Geometry 模式 96/192 DPI 下的粗/细边框连接。
 
@@ -477,3 +479,13 @@ Python 后台的隔离测试：行高范围、JSONC、重复 profile 要求明�
 | 改圆角几何本身 | 字体与三个生成银行一起维护；普通行高调整使用 `:UiLineHeight` |
 
 修改后重启 Neovim 以验证完整加载顺序；热重载复杂窗口模块可能保留原定时器或事件状态。可用 `:checkhealth`、`:DevTools`、`:ConformInfo` 和 smoke 测试分别检查编辑器、外部工具、格式化与基础工作流。
+
+## Arch 图像绘制、字体和真实终端检查
+
+[config.geometry_image](../lua/config/geometry_image.lua) 使用导出的原字形轮廓和真实 Neovim 网格绘制 Ghostty 圆角；普通文字仍由终端渲染。图像层裁掉浮窗覆盖区域，合并刷新并丢弃过时结果，只清理自己分配的图像。依赖 Neovim 0.12 的实验性 `nvim__inspect_cell`，升级后需要重测。
+
+[config.minimap_kitty](../lua/config/minimap_kitty.lua) 管理透明代码 PNG 与独立 RGB 阴影条带，缓存上传内容，只刷新变化的行；退出、隐藏及缩放时释放自己的图像。Linux 字符格通过终端 ioctl 读取元数据，不读取 stdin，也不与 Neovim 抢输入。
+
+[scripts/geometry-render.py](../scripts/geometry-render.py) 通过 pycairo 栅格化 [fonts/geometry-paths.json](../fonts/geometry-paths.json)。[scripts/build-arch-fonts.py](../scripts/build-arch-fonts.py) 使用 fontTools 从原四款字体生成改名衍生字体；Console 接缝基底覆盖全部原 COLR 图层，防止 VTE 裁掉描边，不改普通字形或字宽。构建不会安装字体或改变终端设置。
+
+[tests/arch_ui.lua](../tests/arch_ui.lua) 需在真实终端运行，通过临时文件检查鼠标、焦点、模式、浮窗和图像恢复；[tests/gui_keys.py](../tests/gui_keys.py) 在隔离 Xvfb 中经 GTK/终端发送真实按键，使用简单输入法，避免连接桌面 Fcitx。自动适配分支见 [tests/terminal_settings.lua](../tests/terminal_settings.lua)，图像检查见 [test_geometry_pixels.py](../tests/test_geometry_pixels.py) 和 [test_minimap_kitty.py](../tests/test_minimap_kitty.py)。实际环境、已通过项和未验证范围见 [Arch 回归记录](ARCH_VALIDATION.md)。

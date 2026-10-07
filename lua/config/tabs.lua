@@ -34,9 +34,16 @@ local function marked(text, roof, bottom)
   local parts = {}
   for char in text:gmatch("[\1-\127\194-\244][\128-\191]*") do
     local wide = vim.fn.strdisplaywidth(char) == 2
-    parts[#parts + 1] = char
-      .. (roof and edge(roof, wide and "wide_roof_mark" or "roof_mark") or "")
-      .. (bottom and edge(bottom, wide and "wide_mark" or "mark") or "")
+    if wide and require("core.settings").get().geometry_images then
+      -- Keep wide text in its native fallback font. Ghostty cannot shape the
+      -- custom zero-width marks and CJK glyphs as one font run.
+      -- geometry_image supplies these strokes without marking the TUI text.
+      parts[#parts + 1] = char
+    else
+      parts[#parts + 1] = char
+        .. (roof and edge(roof, wide and "wide_roof_mark" or "roof_mark") or "")
+        .. (bottom and edge(bottom, wide and "wide_mark" or "mark") or "")
+    end
   end
   return table.concat(parts)
 end

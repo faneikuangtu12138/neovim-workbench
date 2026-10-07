@@ -1,5 +1,7 @@
 # 字体与终端外观
 
+Arch 的 Ghostty / GNOME Console 请先阅读 [Arch 实测适配](../docs/ARCH.md)：分别使用 `arch-text`、`arch-console` 中的衍生字体；下面保留原 Geometry 6 与 Windows Terminal 的配置说明。
+
 默认 `round_tabs = false` 是兼容模式，使用 Unicode 边框和标准 Nerd Font 符号。请在终端选择 **Nerd Font Mono**，例如 JetBrainsMono Nerd Font Mono；纯文字等宽字体可能缺少文件图标。
 
 完整专用模式使用本目录的 **ForgeMono Geometry 6 NF**，是改名的 JetBrains Mono NL Nerd Font Mono 衍生字体，增加了标签连接、窗格外沿、焦点描边和底栏胶囊字形。四个 TTF 对应 Regular、Bold、Italic、Bold Italic，需要一起安装。原字体的文字与图标保留，新增字形依赖 Macchiato 的固定颜色。

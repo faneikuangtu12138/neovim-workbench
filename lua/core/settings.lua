@@ -1,6 +1,7 @@
 local M = {}
 local defaults = {
   round_tabs = false,
+  geometry_images = "auto",
   terminal_ui = {
     enabled = true,
     profile = "Fedora",
@@ -29,6 +30,14 @@ function M.setup()
   if type(M.values.round_tabs) ~= "boolean" then
     warn("round_tabs must be true or false; using the standard Nerd Font UI.")
     M.values.round_tabs = false
+  end
+  if M.values.geometry_images == "auto" then
+    M.values.geometry_images = M.values.round_tabs
+      and vim.env.TERM_PROGRAM == "ghostty"
+      and vim.uv.os_uname().sysname == "Linux"
+  elseif type(M.values.geometry_images) ~= "boolean" then
+    warn("geometry_images must be auto, true or false; disabling the image chrome renderer.")
+    M.values.geometry_images = false
   end
   local height = tonumber(M.values.line_height)
   if M.values.line_height ~= nil then

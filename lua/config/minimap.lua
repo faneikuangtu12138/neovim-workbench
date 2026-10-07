@@ -275,7 +275,7 @@ function M.paint()
     state.encoded = key
   end
   -- Blank native cells reserve layout space and erase old graphics on redraw.
-  -- The preview itself is actual small-font text, delivered as a Sixel image.
+  -- The preview itself is actual small-font text, delivered through Kitty graphics or Sixel.
   if api.nvim_buf_line_count(target) ~= height then
     vim.bo[target].modifiable = true
     api.nvim_buf_set_lines(

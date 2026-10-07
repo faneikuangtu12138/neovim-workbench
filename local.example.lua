@@ -5,6 +5,11 @@ return {
   -- ForgeMono Geometry 6 NF styles and matching your terminal's cell height.
   round_tabs = false,
 
+  -- The default "auto" chooses the Ghostty image workaround on Linux when
+  -- round_tabs is enabled. Other terminals keep native glyphs. Override with
+  -- true/false only for diagnosis; see docs/ARCH.md for the terminal fonts.
+  -- geometry_images = "auto",
+
   -- Optional startup default for the geometry glyphs. A :UiLineHeight cache
   -- takes priority, so querying/changing the terminal height survives restart.
   -- This setting does not change any terminal application's font or line height.
